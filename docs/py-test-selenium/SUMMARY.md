@@ -1,3 +1,4 @@
++   [Python Selenium 测试教程](README.md)
 +   [一、Selenium 简介](01.md)
 +   [二、入门指南](02.md)
 +   [三、鼠标和键盘操作](03.md)
@@ -10,4 +11,3 @@
 +   [十、等待](10.md)
 +   [十一、页面对象](11.md)
 +   [十二、使用测试用例和截图](12.md)
-+   [Python Selenium 测试教程](README.md)

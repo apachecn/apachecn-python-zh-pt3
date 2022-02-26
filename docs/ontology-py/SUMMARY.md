@@ -1,3 +1,4 @@
++   [Python 本体论教程](README.md)
 +   [一、简介](01.md)
 +   [二、Python 语言：玩转一条蛇！](02.md)
 +   [三、OWL 本体论](03.md)
@@ -9,4 +10,3 @@
 +   [九、使用医学术语、PyMedTermino 和 UMLS](09.md)
 +   [十、混合 Python 和 OWL](10.md)
 +   [十一、使用 RDF 三元组和世界](11.md)
-+   [Python 本体论教程](README.md)
