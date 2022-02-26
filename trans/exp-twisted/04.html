@@ -1,0 +1,499 @@
+<html lang="en">
+<head><title>Twisted in Docker</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">4.在码头扭曲</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">Docker 常用于微服务架构。这些都是基于通过网络通信的不同组件。Twisted 本身支持多种网络范例，通常非常适合基于 Docker 的架构。</p>
+<p class="Para" id="Par3">码头工人和一般的集装箱都是新的。工具和关于如何使用工具的共识都在快速发展。我们在这里给出了如何使用 Docker 的基础，因此我们可以在此基础上建立如何使用 Twisted in Docker 的理解。</p>
+<p class="Para" id="Par4">注意 Docker 是一种基于 Linux 的技术。虽然其他操作系统也有类似的功能，但是 Docker 是建立在利用特定的 Linux 内核功能的基础上的。Docker for Windows 确实能够运行“Windows 容器”，但这超出了本章的范围。</p>
+<p class="Para" id="Par5">Docker for Mac 和 Docker for Windows 使用运行 Linux 的虚拟机，并与主机操作系统(分别是 OS X 和 Windows)进行了足够的集成，以实现无缝交互。然而，重要的是要记住 Docker 容器总是在 Linux 内核上运行，即使是在 Mac 或 Windows 笔记本电脑上运行。</p>
+<h2 class="Heading">intro to docker</h2>
+<p class="Para" id="Par6">因为 Docker 既新又受欢迎，所以有几个不同的东西被称为“Docker”准确理解 Docker <em class="EmphasisTypeItalic ">是什么</em>本身并不简单。我们试图将这里的“Docker”分成不同的概念。注意，这些中的每一个通常被称为“Docker”，以及包括它们的整体。</p>
+<h3 class="Heading">容器</h3>
+<p class="Para" id="Par7">容器是在比传统 UNIX 进程更隔离的情况下运行的进程。</p>
+<p class="Para" id="Par8">在容器中，唯一可见的进程是那些由容器的根进程启动的进程，在容器中显示为进程 ID <code>1</code>。注意，这是可选的:容器可以共享主机的进程 id。使用 Docker 命令行，这是通过参数<code>--pid host</code>完成的。</p>
+<p class="Para" id="Par9">同样，容器也有自己的网络地址。这意味着容器内部的进程可以监听给定的端口，而无需与主机或其他运行的容器协调。同样，可以使用特殊的参数<code>--net host</code>运行容器，以便共享主机网络名称空间。</p>
+<p class="Para" id="Par10">最后，每个容器都有自己的文件系统。例如，这意味着我们可以在不同的容器中安装不同的 Python，而不用担心甚至是冲突的 Python 包。直接共享主机文件系统是很棘手的。</p>
+<p class="Para" id="Par11">但是，我们可以使用 Docker 的“volume mount”选项。卷装载选项要求在容器内使主机上的目录可访问(“装载”)。该选项的语法是用冒号将目录与主机(左侧)和容器(右侧)中要“装入”的目录分开。</p>
+<p class="Para" id="Par12">因此，用<code>--volume /:/from-host</code>运行 Docker 将使主机的所有文件都可以访问。请注意，它们在容器内部是可访问的，不是在它们通常的位置，而是在<code>/from-host</code>目录中。</p>
+<p class="Para" id="Par13">容器被精确地隔离到它们期望被隔离的程度。这类似于克隆系统调用的标志，指示父进程和子进程之间共享什么:例如，<code>CLONE_FILES</code>标志指示共享文件描述符表。</p>
+
+<h3 class="Heading">容器图像</h3>
+<p class="Para" id="Par14">当<em class="EmphasisTypeItalic ">容器</em>是运行的、孤立的进程集时，<em class="EmphasisTypeItalic ">容器映像</em>允许我们实例化一个容器——它们相当于可执行映像。</p>
+<p class="Para" id="Par15">在内部，容器映像由<em class="EmphasisTypeItalic ">层</em>组成，每一层代表一个文件系统。容器将看到的最终文件系统(通常称为联合文件系统)是所有层的组合，较高的层覆盖较低的层。上层可以修改、添加甚至“删除”前一层中的文件。虽然下层不会受到影响，但容器内部可见的最终文件系统将受到影响。</p>
+<p class="Para" id="Par16">这很重要，因为这意味着删除上层文件<em class="EmphasisTypeItalic ">并不能</em>节省空间。例如，如果第一层有一个 tarball，然后将其展开，则 tarball 通常是多余的。上层通常会有<code>rm/path/to/file.tar.gz</code>或类似的命令。这在文件名不可见的情况下是好的——但是，在整个容器映像的最终大小中——例如，需要下载多少字节来运行它 tarball 仍将被包括在内。</p>
+<p class="Para" id="Par17">集装箱图像以其最终位置命名为(或者更准确地说是标签)。通常的命名方案是<code>[optional host/]</code> [ <code>optional user/]name[:optional tag]</code>。虽然也有例外，但那些永远不会离开构建它们的主机的映像通常会省略<code>host</code>和<code>user</code>部分。</p>
+<p class="Para" id="Par18">如果标签关闭，默认为<code>:latest</code>。如果主机关闭，默认为<code>docker.io</code>。</p>
+<p class="Para" id="Par19">注意，同一个容器图像可以有多个标签。</p>
+<p class="Para" id="Par20">容器映像在<em class="EmphasisTypeItalic ">注册中心</em>和<em class="EmphasisTypeItalic ">主机</em>之间移动:它们可以被“推”到注册中心，也可以被“拉”到主机。</p>
+
+<h3 class="Heading">Runc 和 Containerd</h3>
+<p class="Para" id="Par21">为了从一个映像运行一个容器，使用了一个叫做<code>runc</code>(“运行容器”)的特殊程序。这个程序负责设置适当的隔离机制:它使用 Linux 内核设施，比如 cgroups 和 namespaces，以便适当地隔离文件系统、进程名称空间和网络地址。</p>
+<p class="Para" id="Par22">通常，容器用户不会直接与<code>runc</code>交互。然而，它被 Docker 堆栈和几乎所有的替代容器堆栈(如 Rocket)在幕后使用。</p>
+<p class="Para" id="Par23">为了管理正在运行的容器，有必要知道哪些容器正在运行，以及它们的状态如何。出于这个原因，一个名为<code>containerd</code>的“守护程序”通过调用<code>runc</code>从图像中生成所有容器。</p>
+<p class="Para" id="Par24">注意，在 Docker 的早期版本中，runc 被嵌入到<code>containerd</code>中——所以很多资料仍然将“Docker 守护进程”称为运行容器。</p>
+
+<h3 class="Heading">客户</h3>
+<p class="Para" id="Par25">与预期相反，命令行<code>docker run</code>不运行容器。相反，它与<code>containerd</code>守护进程通信，并要求它运行带有<code>runc</code>的容器。</p>
+<p class="Para" id="Par26">默认情况下，它使用 UNIX 域套接字与服务器通信。UNIX 域套接字是基于 UNIX 的操作系统上一种特殊的进程间通信工具。它们的 API 类似于 TCP 套接字，但是它们只用于同一台机器内部的通信，允许内核做一些快捷方式。UNIX 域套接字使用文件路径作为它们的地址，而不是 IP 地址和端口。这允许应用通常的 UNIX 文件权限模型。</p>
+<p class="Para" id="Par27">默认情况下，<code>docker</code>连接的 UNIX 域套接字是<code>/var/run/docker.sock</code>。根据 Docker 安装的具体细节，它可能由<code>docker</code>组或<code>root</code>组访问。Docker 客户端还可以使用 TLS over TCP 连接到服务器，使用 TLS 证书进行相互身份验证。</p>
+<p class="Para" id="Par28">对于<code>docker</code>的所有其他子命令也是如此，比如<code>build</code>、<code>images</code>等。(注意<code>docker login</code>是个例外，但是远程注册中心登录如何工作的解释超出了我们目前的范围。)</p>
+<p class="Para" id="Par29">因为命令行<code>docker</code>主要用于向守护进程发送远程过程调用，所以我们称之为“客户端”</p>
+
+<h3 class="Heading">登记处</h3>
+<p class="Para" id="Par30">Docker 将图像保存在一个(通常是远程的)<em class="EmphasisTypeItalic ">注册表</em>中。注册表将每个图像存储为一些元数据，加上一组<em class="EmphasisTypeItalic ">层</em>。元数据记录了层的顺序，以及容器图像的一些细节。</p>
+<p class="Para" id="Par31">请注意，由于这种存储方法，同一层将只存储一次。几个图像共享层的常见情况是具有共同的祖先，这意味着从一个公共基础图像构建的多个图像不需要该图像的自己的副本。</p>
+<p class="Para" id="Par32">还要注意，默认注册表<code>docker.io</code>内置于软件中——如果没有指定注册表，则采用默认注册表——通常称为“DockerHub”</p>
+<p class="Para" id="Par33">这是单词“Docker”的一种稍微不同的用法，应该再次注意到这是一种可能会引起混淆的术语。</p>
+
+<h3 class="Heading">建设</h3>
+<p class="Para" id="Par34">构建映像的通常方式是使用<code>docker build</code>命令行。这使用了一个被称为<code>Dockerfile</code>的配置文件。<code>Dockerfile</code>以一条<code>FROM</code>线开始。<code>FROM</code>标识祖先形象。如果需要一个空图像，<code>FROM scratch</code>将使用没有图层的<code>scratch</code>图像。然而，这是罕见的。</p>
+<p class="Para" id="Par35">通常，构建将从一个通用的 Linux 发行版开始，这些发行版都可以从默认的 Docker 注册表 DockerHub 中获得。比如 Debian，Ubuntu，CentOS 都有。</p>
+<p class="Para" id="Par36"><code>Dockerfile</code>中的每一行都是一个“构建阶段”每个构建阶段都会创建一个层，并且层会被缓存。这意味着当修改一个<code>Dockerfile</code>时，只有被改变的行(以及它们后面的行)会被执行。</p>
+<p>下面的例子就是这样一个<code>Dockerfile</code>，它将运行 Twisted web 演示服务器。</p>
+<pre>FROM debian:latest
+RUN python3 -m pip install --user Twisted
+ENTRYPOINT ["python3", "-m", "twisted", "web"]
+
+</pre>
+<p>这并没有展示最佳实践，我们将在查看更复杂的特性时介绍最佳实践，但是它展示了几乎总是出现在<code>Dockerfile</code>中的三个重要部分:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par39"><code>FROM</code>线。在这里，我们要求的是<code>debian</code>的<code>latest</code>版本。请注意，因为我们没有使用带斜线的名称，所以这来自 DockerHub 上的“库”——一组半官方的基本图像。</p></li>
+<li><p class="Para" id="Par40"><code>RUN</code>行在正在构建的容器中运行一个命令，通常的效果是以某种方式改变它。在这种情况下，我们将 Twisted 安装成一个<code>user</code>安装。</p></li>
+<li><p class="Para" id="Par41"><code>ENTRYPOINT</code>行设置容器启动时将运行的程序。</p></li>
+</ul>
+
+
+<h3 class="Heading">多阶段构建</h3>
+<p class="Para" id="Par42">上面的解释缺少了一个重要的新功能，是在<code>docker build</code>中于 2017 年年中添加的。这些是多阶段构建。当<code>Dockerfile</code>中有一个以上的<code>FROM</code>行时，就会发生多阶段构建。</p>
+<p class="Para" id="Par43">当这种情况发生时，构建过程开始构建新的映像，在构建结束时，所有非最终映像都将被丢弃。然而，<em class="EmphasisTypeItalic ">当构建运行</em>时，其他映像可以通过一个<code>Dockerfile</code>命令—<code>COPY</code>访问。</p>
+<p class="Para" id="Par44">当使用<code>COPY --from=&lt;image&gt;</code>时，它不会从上下文中复制文件，而是从以前的图像中复制。虽然在理论上，多阶段构建可以有任意数量的阶段，但需要两个以上的阶段是非常罕见的。图像的排序使用从 0 开始的编号。大多数“多阶段”构建实际上是“两阶段”构建。第一阶段将构建所有的工件，使用一个充满编译器和构建工具的“厚”映像。第二阶段从第一阶段提取所有的工件，并生成最终的图像进行分发。正因为如此，级间指令通常采用的形式是<code>COPY --from=0</code>。</p>
+<p class="Para" id="Par45">当需要一个复杂的构建环境来生成一些将要部署的产品时，这很有用——最好不要在最终的运行时容器中提供复杂的构建环境:这样可以减少规模、层数和潜在的安全风险。</p>
+<p>下面是一个多阶段构建的示例。请注意，在这种情况下，最终输出并不打算直接使用，而是在其他构建中构建。这是一种常见的模式:构建具有通用元素的标准库有几个优点——例如，这可以节省注册表和运行服务器中的空间(如果多个不同的映像在一台服务器上运行，这是常有的事)。另一个好处是当 bug 被修复时，有一个地方可以升级基础包。</p>
+<pre>FROM python:3
+RUN mkdir /wheels
+RUN pip wheel --wheel-dir /wheels pyrsistent
+
+FROM python:3-slim
+COPY --from=0 /wheels /wheels
+RUN pip install --no-index --find-links /wheel pyrsistent
+
+</pre>
+<p>同样，我们将逐行解释这里发生了什么:</p>
+<pre>FROM python:3
+
+</pre>
+<p><code>python:3</code>库是标准“DockerHub 库”库的另一个例子。它包括 Python 3，但也包括足够的工具来构建本机代码轮——至少是简单的，没有进一步的依赖性。</p>
+<pre>RUN mkdir /wheels
+
+</pre>
+<p>我们创建目录来存储轮子。请注意，因为这个阶段不会出现在最终输出中，所以我们对创建额外的层并不敏感。事实上，额外的层是好的——它们创造了更多的缓存点。在这种情况下，这没什么意思，但是构建基础通常包括安装更多的构建依赖项。</p>
+<pre>RUN pip wheel --wheel-dir /wheels pyrsistent
+
+</pre>
+<p><code>pip wheel</code>子命令在多阶段构建中很有用。它为指定的需求及其所有依赖项构建了一个轮子。如果平台兼容，它将使用 PyPI 为<code>manylinux</code>构建的二进制轮——但如果需要，可以用<code>pip wheel --no-binary :all</code>关闭这种行为。</p>
+<pre>FROM python:3-slim
+
+</pre>
+<p><code>python:3-slim</code>基础类似于 python:3，但是不包括复杂的构建时依赖集。请注意，Python 发行版中的 many :code: <code>setup.py</code>会自动检测编译器或依赖项的缺失，并自动关闭本机代码模块的构建。例如，<code>pyrsistent</code>有一个 C 优化的持久矢量实现，这是我们想要的。因此，我们不想在这个阶段安装<code>pyrsistent</code>。</p>
+<pre>COPY --from=0 /wheels /wheels
+
+</pre>
+<p>我们复制刚刚构建的<code>pyrsistent</code>轮，以及从第一阶段(阶段 0)到当前阶段的任何依赖关系。第二条<code>FROM</code>线表示这是一个多阶段构建——但是这条<code>COPY</code>线使多阶段构建变得有用。</p>
+<pre>RUN pip install --no-index --find-links /wheel pyrsistent
+
+</pre>
+<p class="Para" id="Par53">最后，我们将库安装到本地 Python 环境中。我们小心地为<code>pip</code>指定了<code>--no-index</code>和<code>--find-links</code>选项，这样它将使用第一阶段的轮子，而不是从 PyPI 获得新的发行版。</p>
+
+
+<h2 class="Heading">Docker 上的 Python</h2>
+<p class="Para" id="Par54">像在任何 UNIX 平台上一样，在 Docker 上部署 Python 应用程序有很多种方法。它们并不完全相同，有些比其他的更好。我们将调查那些效果较好的选项。</p>
+<h3 class="Heading">部署选项</h3>
+<h4 class="Heading">全环境</h4>
+<p class="Para" id="Par55">“全环境”部署意味着有一个专门为应用程序安装的定制 Python 解释器。这个 Python 可以作为 Docker 构建过程的一部分或之前从源代码定制构建，也可以来自元发行版，如<code>conda</code>或<code>nix</code>。</p>
+<p class="Para" id="Par56">安装一个定制的 Python 解释器通常是有用的:我们可以在其上定制构建选项，固定解释器版本，甚至在特别极端的情况下，应用定制补丁。然而，这意味着我们承担了使解释器保持最新的任务。</p>
+<p class="Para" id="Par57">无论我们如何安装这个解释器，它将完全用于我们的应用程序。我们使用<code>pip install</code>在其中安装包——或者，如果它来自元发行版(比如<code>conda</code>或<code>nix</code>),我们也可以从元发行版安装包。这对于 conda 尤其有用，因为有许多与数据科学相关的 Python 包可供安装。</p>
+<p>这里有一个例子<code>Dockerfile</code>，它构建了一个定制的 Python 解释器，装载了必要的包。</p>
+<pre>FROM buildpack-deps:stretch
+
+ENV PYTHON_VERSION 3.6.4
+ENV PREFIX https://www.python.org/ftp/python
+
+ENV LANG C.UTF-8
+
+ENV GPG_KEY 0D96DF4D4110E5C43FBFB17F2D347EA6AA65421D
+
+RUN apt-get update
+RUN apt-get install -y --no-install-recommends \
+        tcl \
+        tk \
+        dpkg-dev \
+        tcl-dev \
+        tk-dev
+
+RUN wget -O python.tar.xz \
+    "$PREFIX/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz"
+RUN wget -O python.tar.xz.asc \
+    "$PREFIX/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz.asc"
+RUN export GNUPGHOME="$(mktemp -d)" &amp;&amp; \
+    gpg --keyserver ha.pool.sks-keyservers.net --recv-keys "$GPG_KEY" &amp;&amp; \
+    gpg --batch --verify python.tar.xz.asc python.tar.xz
+RUN mkdir -p /usr/src/python
+RUN tar -xJC /usr/src/python --strip-components=1 -f python.tar.xz
+
+WORKDIR /usr/src/python
+
+
+
+
+
+
+
+
+RUN gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)"
+RUN ./configure \
+    --build="$gnuArch" \
+    --enable-loadable-sqlite-extensions \
+    --enable-shared \
+        --prefix=/opt/custom-python/
+RUN make -j
+RUN make install
+RUN ldconfig /opt/custom-python/lib
+RUN /opt/custom-python/bin/python3 –m pip install twisted
+
+FROM debian:stretch
+
+COPY --from=0 /opt/custom-python /opt/custom-python
+RUN apt-get update &amp;&amp; \
+    apt-get install libffi6 libssl1.1 &amp;&amp; \
+    ldconfig /opt/custom-python/lib
+ENTRYPOINT ["/opt/custom-python/bin/python3", "-m", "twisted", "web"]
+
+</pre>
+<p>构建定制的 Python 解释器虽然有用，但并不简单。我们一行一行地检查这个文件:</p>
+<pre>FROM buildpack-deps:stretch
+
+</pre>
+<p>对于建筑来说,<code>buildpack-deps</code>是一个有用的基础图像。由于我们将使用 Debian“stretch”作为我们的部署版本，在撰写本文时它是最新的稳定 Debian 版本，所以我们得到了 stretch 兼容的 buildpack。</p>
+<pre>ENV PYTHON_VERSION 3.6.4
+ENV PREFIX https://www.python.org/ftp/python
+
+</pre>
+<p>设置这些可以让我们轻松地修改我们使用的 Python 版本——这对从上游获得新的安全修复和错误修复是必不可少的。我们越容易升级 Python，我们的情况就越好。</p>
+<pre>ENV LANG C.UTF-8
+
+</pre>
+<p>将语言明确设置为 UTF-8 是必要的，以避免在 Python 构建过程中出现不明显的错误。虽然在教学上没有启发性，但作为一个放置这些变通办法的地方，这是有用的。将这些细节放在 docker 文件中是确保构建成功的一个方便的地方——无论是在持续集成系统上还是在本地。</p>
+<pre>ENV GPG_KEY 0D96DF4D4110E5C43FBFB17F2D347EA6AA65421D
+
+</pre>
+<p class="Para" id="Par63">这是 GnuPG 公钥，对应于签署 Python tarball 上传的私钥。Gnu Privacy Guard 是一个使用密码术来实现安全保证的工具。在这种情况下，密钥允许我们知道源代码没有被篡改。这是一个好主意，增加纵深防御，并使用多种方法来验证我们的来源是真实的。这个<code>Dockerfile</code>，或者类似的，经常被用在持续集成环境中，在那里它们被重复地和自动地运行。只需一次破坏就能严重危及基础设施。如果源代码没有保证，确保构建失败可以消除代价高昂的生产违规。</p>
+<p>将密钥指纹保存在 docker 文件中(可能会签入到源代码控制中)，是在签入的代码中建立信任的一种方式。</p>
+<pre>RUN apt-get update
+RUN apt-get install -y --no-install-recommends \
+        tcl \
+        tk \
+        dpkg-dev \
+        tcl-dev \
+        tk-dev
+
+</pre>
+<p>除了 buildpack 之外，我们还需要一些额外的库。我们把它们安装在这里。</p>
+<pre>RUN wget -O python.tar.xz \
+    "$PREFIX/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz"
+
+</pre>
+<p>接下来，我们下载 Python 源代码 tarball。定义上面的变量可以让我们保持这一行简短明了。此外，即使对于稳定版本来说不是必需的，这个命令行也可以用于像<code>3.6.1rc2</code>这样的版本——如果我们想使用这个 docker 文件，只做很小的修改，来测试与候选发布版本的兼容性，那么这个命令行是必需的。</p>
+<pre>RUN wget -O python.tar.xz.asc \
+    "$PREFIX/${PYTHON_VERSION%%[a-z]*}/Python-$PYTHON_VERSION.tar.xz.asc"
+
+</pre>
+<p>我们下载分离的公钥签名。尽管我们从支持 TLS 的网站下载这两个版本，一个是以<code>https</code>为前缀，而不是<code>http</code>，检查签名是一个很好的深度防御措施。</p>
+<pre>RUN export GNUPGHOME="$(mktemp -d)" &amp;&amp; \
+    gpg --keyserver ha.pool.sks-keyservers.net --recv-keys "$GPG_KEY" &amp;&amp; \
+    gpg --batch --verify python.tar.xz.asc python.tar.xz
+
+</pre>
+<p>此命令行验证公钥。注意，这是一个命令的例子，它不<em class="EmphasisTypeItalic ">而</em>改变本地状态。然而，由于任何失败的命令都将停止<code>docker build</code>进程，一个关键验证错误将导致构建暂停。</p>
+<pre>RUN mkdir -p /usr/src/python
+
+</pre>
+<p>我们为解压后的源代码创建一个目录。注意，由于这是一个多阶段的构建，我们不关心这个目录的最终清理——整个容器都将被清理！</p>
+<pre>RUN tar -xJC /usr/src/python --strip-components=1 -f python.tar.xz
+
+</pre>
+<p>我们将 Python tarball 解压到新创建的目录中。</p>
+<pre>WORKDIR /usr/src/python
+
+</pre>
+<p>我们将当前工作目录设置为源代码目录。这使得需要从内部运行的后续构建指令更短、更容易理解。</p>
+<pre>RUN gnuArch="$(dpkg-architecture --query DEB_BUILD_GNU_TYPE)" &amp;&amp; \
+  ./configure \
+    --build="$gnuArch" \
+    --enable-loadable-sqlite-extensions \
+    --enable-shared \
+        --prefix=/opt/custom-python/
+
+</pre>
+<p>我们运行。/configure 脚本，带有自定义前缀。自定义前缀<code>/opt/custom-python</code>确保我们将处于一个原始的目录中。我们还提供了一些选项来确保我们的 Python 构建是正确的:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par73">使用<code>dpkg-architecture</code>计算架构，并显式传递给配置脚本。这比让配置脚本自动检测它更可靠。</p></li>
+<li><p class="Para" id="Par74">我们启用<code>sqlite</code>模块。由于它是内置的，许多第三方模块将依赖于它而不声明依赖关系，所以确保它是安装的一部分是很重要的。</p></li>
+<li><p class="Para" id="Par75">我们启用共享库。在我们的例子中，这不是绝对必要的，但是它允许嵌入 Python 的情况。</p></li>
+</ul>
+
+<p>
+                   
+                </p>
+<pre>RUN make -j
+
+</pre>
+                <p>计算 CPU 的确切数量并不简单。在这个例子中，我们只是以最大并行度运行 make。这就是<code>-j</code>标志的作用。注意，一般情况下，建议通过给<code>-j</code>一个数字参数，例如<code>-j</code> 4，将并行度设置到一个合理的水平。</p>
+<pre>RUN make install
+
+</pre>
+<p>此阶段会将具有正确权限的文件复制到安装目录中。</p>
+<pre>RUN ldconfig /opt/custom-python/lib
+
+</pre>
+<p>我们将目录添加到我们的库搜索路径中——否则 Python(动态链接的)无法运行。</p>
+<pre>RUN /opt/custom-python/bin/python3 -m pip install twisted
+
+</pre>
+<p>我们安装扭曲的。在 Twisted 的许多其他好处中，它包含一个方便的默认 web 服务器，这对演示很有用。</p>
+<pre>FROM debian:stretch
+
+</pre>
+<p>对于产品构建，我们从一个合适的最小 Debian 发行版开始——保持它是构建包的匹配版本。</p>
+<pre>COPY --from=0 /opt/custom-python /opt/custom-python
+
+</pre>
+<p>我们复制整个环境——包括安装的第三方库:在本例中，是 Twisted 及其依赖项。</p>
+<pre>RUN apt-get update &amp;&amp; \
+    apt-get install libffi6 libssl1.1 &amp;&amp; \
+    ldconfig /opt/custom-python/lib
+
+</pre>
+<p>我们安装必要的库并在生产映像中运行<code>ldconfig</code>。</p>
+<pre>ENTRYPOINT ["/opt/custom-python/bin/python3", "-m", "twisted", "web"]
+
+</pre>
+<p class="Para" id="Par84">我们设置入口点来运行 Twisted 内置的演示 web 服务器。如果我们构建并运行这个 docker 映像，web 服务器将会运行——如果我们导出端口，我们甚至可以用浏览器检查它。</p>
+
+
+<h3 class="Heading">Virtualenv(虚拟环境)</h3>
+<p>完整环境的替代方案是“轻量级”环境，也就是人们所说的虚拟环境。当使用 Python 2.7 时，我们使用<code>virtualenv</code>包创建一个虚拟环境。使用<code>pip</code>安装<code>virtualenv</code>是可能的，但是这有问题:毕竟，如果创建虚拟环境的原因是为了避免改变真实环境，这就失去了好处。一种方法是用我们获得 Python 的方式获得<code>virtualenv</code>。另一种方法是使用</p>
+<pre>pip install --user virtualenv
+
+</pre>
+<p>这将把它放在<em class="EmphasisTypeItalic ">用户</em>目录下(在 Docker 上，通常在<code>/root</code>下)。这通常意味着<code>virtualenv</code>不在默认的 shell 路径上——但是因为它在 Python 路径上，</p>
+<pre>python -m virtualenv &lt;directory&gt;
+
+</pre>
+<p class="Para" id="Par87">仍然可以工作并创建一个虚拟环境。</p>
+<p class="Para" id="Par88">当使用 Python 3.x 时，这些问题是没有实际意义的:<code>python -m venv</code>是为 Python 3.x 创建虚拟环境的最佳方式。请注意，一些文档尚未更新，virtualenv <em class="EmphasisTypeItalic ">在 Python 3.x 上运行</em>——这使得确保所有这些都是最新的变得更加困难。然而，<code>venv</code>内置模块的存在极大地简化了虚拟环境的引导。</p>
+<p class="Para" id="Par89">在虚拟环境中安装代码的好处之一是，我们知道虚拟环境的目录只包含运行它所必需的内容——除了解释器。当我们构建 Docker 映像时，这个特性会派上用场。</p>
+<p>把所有这些想法放在一起，我们可能会得出这样一个<code>Dockerfile</code>:</p>
+<pre>FROM python:3
+
+</pre>
+<p>因为我们要构建一个虚拟环境，所以我们需要已经安装了一个完整的环境。最简单的方法之一是从<code>python</code>容器开始。</p>
+<pre>RUN python -m venv /opt/venv-python
+
+</pre>
+<p>我们在<code>/opt/venv-python</code>中创建一个虚拟环境。</p>
+<pre>RUN /opt/venv-python/bin/pip install Twisted
+
+</pre>
+<p>我们在里面安装了扭结。注意，安装 Twisted 意味着安装几个带有 C 扩展的包——这个阶段需要一个 C 编译器。容器映像拥有构建 C 扩展所需的所有工具。</p>
+<pre>FROM python:3-slim
+
+</pre>
+<p><code>python:3-slim</code>容器映像没有构建工具。由于这是我们将发布的映像，这意味着我们不会将 C 编译器发布到产品中。</p>
+<pre>COPY --from=0 /opt/venv-python /opt/venv-python
+
+</pre>
+<p>我们复制虚拟环境。请注意，虚拟环境中有几个硬编码的路径。这就是为什么我们要确保使用与部署路径相同的路径来创建它。</p>
+<pre>ENTRYPOINT ["/opt/venv-python/bin/python", "-m", "twisted", "web"]
+
+</pre>
+<p class="Para" id="Par96">入口点与之前的入口点几乎相同。唯一的区别是路径——这次指向的是虚拟环境，而不是完整的环境。</p>
+
+<h3 class="Heading">最大运动量</h3>
+<p class="Para" id="Par97">最独立的选项是 Pex——Twitter 首创的 Python 可执行格式。Pex 结合了 UNIX、Python 和 Zip 归档的功能，具有包含所有应用程序代码和第三方依赖项的单一文件格式。</p>
+<p class="Para" id="Par98">Pex 文件应该在文件系统级别被标记为可执行的，例如使用<code>chmod +x</code>，并使用调用 Python 解释器的 shebang 行(<code>!#</code>)生成。由于 Zip 存档具有独特的属性，即它们是通过它们的最后字节而不是第一个字节来检测和解析的，因此文件的其余部分是一个 Zip 文件。</p>
+<p class="Para" id="Par99">当 Python 解释器接受一个 Zip 文件，或者一个带有任意内容的 Zip 文件时，它会将其视为 sys.path 附加文件，并且会额外执行存档中的<code>__main __.py</code>文件。Pex 文件生成一个定制的<code>__main__ .py</code>,它调用入口点或执行 Python 模块，这取决于传递给 Pex builder 的参数。</p>
+<p>Pex 可以通过使用<code>pex</code>命令行(随<code>pip install pex</code>一起安装)、使用<code>pex</code>作为 Python 库并使用其创建 API 来构建，也可以通过大多数现代元构建器来构建——Pants、Bazel 和 Buck 都能够生成 Pex 输出。</p>
+<pre>FROM python:3
+RUN python -m venv /opt/venv-python
+
+</pre>
+<p>我们创造了一个虚拟环境。虽然我们不打算<em class="EmphasisTypeItalic ">发布</em>这个环境，但它将帮助我们构建 Pex 文件。</p>
+<pre>RUN /opt/venv-python/bin/pip install pex
+
+</pre>
+<p>我们安装 pex 实用程序。</p>
+<pre>RUN mkdir /opt/wheels /opt/pex
+
+</pre>
+<p>我们创建两个目录来包含不同种类的产品。</p>
+<pre>RUN /opt/venv-python/bin/pip wheel --wheel-dir /opt/wheels Twisted
+
+</pre>
+<p>我们用<code>pip</code>来制造轮子。这意味着我们将使用<code>pip</code>依赖解析算法。虽然客观上并不比<code>pex</code>算法更好，但它是其他任何地方都使用的算法。这意味着如果软件包在<code>pip</code>依赖关系解析过程中遇到问题，它们将添加正确安装所需的任何提示。不常用的<code>pex</code>就没有这种保证。</p>
+<pre>RUN /opt/venv-python/bin/pex --find-links /opt/wheels --no-index \
+                             Twisted -m twisted -o /opt/pex/twisted.pex
+
+</pre>
+<p>我们构建 Pex 文件。注意，我们告诉<code>pex</code>忽略 PyPI 索引，只从一个特定的目录中收集包——在这个目录中<code>pip</code>放置了它构建的所有轮子。我们配置 Pex 文件的行为就像我们用<code>-m twisted</code>运行 Python 一样，我们把输出放在<code>/opt/pex</code>中。虽然后缀不是绝对必要的，但在检查 Docker 容器图像时，它非常有用，有助于理解事物是如何运行的。</p>
+<pre>FROM python:3-slim
+
+</pre>
+<p>同样，我们避免使用第二阶段的<code>slim</code>映像将构建工具交付给生产。</p>
+<pre>COPY --from=0 /opt/pex /opt/pex
+
+</pre>
+<p>我们复制目录——这一次，它只有一个文件。还要注意，这一次，文件是可重定位的:可以(尽管我们在这里不这样做)复制到不同的路径。</p>
+<pre>ENTRYPOINT ["/opt/pex/twisted.pex", "web"]
+
+</pre>
+<p class="Para" id="Par108">在前面的例子中驻留在<code>ENTRYPOINT</code>(我们想要运行<code>python -m twisted</code>)中的一些逻辑现在被构建到 Pex 文件中。我们的<code>ENTRYPOINT</code>现在更短了。</p>
+
+<h3 class="Heading">构建选项</h3>
+<p class="Para" id="Par109">不管 Python 是以什么方式<em class="EmphasisTypeItalic ">运行</em>的，Docker 容器是以什么方式<em class="EmphasisTypeItalic ">构建的</em>也有很多选择。</p>
+
+<h3 class="Heading">一个大包</h3>
+<p class="Para" id="Par110">一种方法是完全避免多阶段构建，使用构建环境所需的任何工具构建一个容器。这通常意味着容器很大，有很多层。</p>
+<p class="Para" id="Par111">虽然这种方法简单、直接且易于调试，但它也有缺点。容器尺寸很容易成为生产中的一个问题。类似地，层数减慢了容器的部署。最后，将大量的包放在一个暴露于潜在的恶意用户输入的容器中会导致更多的攻击媒介。</p>
+
+<h3 class="Heading">阶段之间的复制轮</h3>
+<p class="Para" id="Par112">另一种方法是在构建阶段构建所有轮子，包括任何二进制轮子，然后将它们复制到生产阶段。在这种情况下，生产阶段仍然需要足够的工具来创建一个虚拟环境并在其中安装这些轮子——尽管由于<code>venv</code>是 Python 3 中的一个 Python 内置模块，这通常不再是一个难题。</p>
+<p class="Para" id="Par113">还有另外两个问题:轮子在安装后仍然存在，因为在切换层后不可能真正删除一个文件；并且它经常创建额外的层(尽管通过巧妙的重新排序和反斜杠继续的行，这有时是可以避免的)。</p>
+
+<h3 class="Heading">在阶段之间复制环境</h3>
+<p class="Para" id="Par114">另一个部署选项是将环境(可以是完整的或虚拟的)从构建阶段复制到生产阶段。这种方法的优点是快速、简单，缺点是没有兼容性检查、依赖性检查或位置检查。尽管如此，如果对生成的容器进行了适当的测试，通常会发现基本的不兼容问题。</p>
+
+<h3 class="Heading">在阶段之间复制 Pex 可执行文件</h3>
+<p class="Para" id="Par115">最后，如果 Pex 可执行文件是在构建阶段生成的，那么复制它是很简单的。当然，Pex 文件会在运行时寻找依赖关系。然而，它会做一个可靠的检查，所以即使启动容器也足以测试它。</p>
+<p class="Para" id="Par116">它也是可重定位的，所以它从哪里拷贝或者拷贝到哪里都没有关系。Pex 和 Docker 通常是很好的组合。然而，Pex 的固有限制(例如，预构建的二进制轮子支持差或 PyPy 支持差)有时使它无法成功。</p>
+
+<h3 class="Heading">Dockerpy 自动化</h3>
+<p class="Para" id="Par117">一个名为<code>dockerpy</code>的包允许用 Python 实现 Docker 步骤的自动化。虽然通常在生产中运行容器，我们将使用编排框架，这通常对构建和测试容器有用。<code>dockerpy</code>库允许我们仔细微调发送给 Docker 守护进程的上下文——使用<code>tarfile</code> Python 模块，可以精确地制作所需的上下文。</p>
+
+
+<h2 class="Heading">在码头上扭转</h2>
+<h3 class="Heading">入口点和 PID 1</h3>
+<p class="Para" id="Par118">Docker 的<code>ENTRYPOINT</code> Dockerfile 指令中的进程在容器内部将具有进程 ID 1。进程 ID 1 在 Linux 上有特殊的责任。当一个进程的父进程在它死亡之前死亡时，PID 1“采用”它——成为它的父进程。这意味着当子进程终止时，PID 1 需要“收获它”——等待它的退出状态，以便从进程表中清除进程条目。</p>
+<p class="Para" id="Par119">这个责任有点诡异，很多节目都不是为它设置的。当运行一个不接收领养儿童的程序时，进程表将会填满。在最好的情况下，这将使容器崩溃。在最坏的情况下，当没有仔细设置进程限制时，这可能会使运行容器的整个机器(虚拟的或物理的)崩溃。</p>
+<p class="Para" id="Par120">幸运的是，<em class="EmphasisTypeItalic ">任何</em>扭曲的程序都设置为 PID 1。这是因为 Twisted 的流程基础设施会自动收获预期的和意外的孩子。</p>
+<p class="Para" id="Par121">这意味着当构建一个容器时，如果我们用它来运行 WSGI 应用程序，或者 Klein 应用程序，或者 Buildbot master，让它作为入口点是很好的。</p>
+<p class="Para" id="Par122">事实上，由于这个原因，如果有任何自定义的启动代码要做，可以考虑将其实现为 tap 插件。这样，Twisted 还是可以作为切入点的。</p>
+
+<h3 class="Heading">自定义插件</h3>
+<p>当编写一个在 Docker 中运行的 Twisted 应用程序时，我们几乎总是希望将它作为一个定制的<code>tap</code>插件来交付。这使得<code>ENTRYPOINT</code>简单</p>
+<pre>["/path/to/python", "-m", "twisted", "custom_plugin"]
+
+</pre>
+<p class="Para" id="Par124">这意味着插件可以获得传递给<code>docker run</code>命令的任何参数——因为这些参数被直接添加到<code>ENTRYPOINT</code>参数中。这也意味着插件可以直接读取通过<code>--env</code>传递给<code>docker run</code>的任何环境变量。</p>
+<p class="Para" id="Par125">在插件中，<code>makeService</code>函数是返回正在运行的服务的函数。请注意，插件可以在该函数中进行任何它想要的初始化——事件循环此时还没有运行。</p>
+
+<h3 class="Heading">殖民地</h3>
+<p class="Para" id="Par126">有时，有必要在 Docker 容器中运行多个进程。也许是一些辅助进程来清理文件，或者是一个多进程设置来使用多个 CPU。在这种情况下，一个进程管理者是有用的——运行几个进程，监视它们，并在必要时重新启动它们。</p>
+<p class="Para" id="Par127">NColony 是一个基于 Twisted 的流程主管。它是围绕<code>twisted.runner.procmon</code>的一个小垫片，允许几个灵活的配置选项。NColony 将配置作为描述进程的 JSON 格式文件的目录。</p>
+<p class="Para" id="Par128">当然，也可以通过打开一个文件并将 JSON 写入其中来直接创建这些文件。然而，NColony 还附带了一个命令行实用程序—<code>python -m ncolony ctl</code>—来创建这样的文件，以及一个 Python 库—<code>ncolony.ctllib</code>。</p>
+<p class="Para" id="Par129">目录模型的一个优点是，这意味着它可以与 Docker 容器的层模型很好地交互。一个本地基础容器可以有一个<code>["python", "-m", "twisted", "ncolony", ...]</code>的<code>ENTRYPOINT</code>，甚至在配置目录中有几个基础进程——通常是<code>/var/run/ncolony/config/</code>。然后，特定的 containerd 可以在这个目录中转储它们自己的文件，这些文件是在容器的构建阶段使用例如<code>python -m ncolony ctl</code>创建的。最终的容器将同时运行副进程和主进程。</p>
+<p>这里有一个例子，它将本章讨论的大部分内容具体化了:</p>
+<pre>FROM python:3
+RUN python3 -m venv /application/env
+RUN /application/env/bin/pip install ncolony
+RUN mkdir /application/config /application/messages
+RUN /application/env/bin/python -m ncolony \
+    --config /application/config \
+    --messages /application/messages \
+    ctl \
+    --cmd /application/env/bin/python \
+    --arg=-m \
+    --arg=twisted \
+    --arg=web
+
+FROM python:3-slim
+COPY --from=0 /application/ /application/
+ENTRYPOINT ["/application/env/bin/python", \
+            "-m", \
+            "twisted", \
+            "ncolony", \
+            "--config", "/application/config", \
+            "--messages", "/application/messages"]
+
+</pre>
+<p>我们一行一行地检查，这里有很多东西。</p>
+<pre>FROM python:3
+
+</pre>
+<p>获得我们的 Python 环境的一种方法是使用官方的 Docker(“库”)映像。这是基于 Debian 发行版的，其中有 Python——以及构建 Python 和 Python 扩展模块所需的所有工具。</p>
+<pre>RUN python3 -m venv /application/env
+
+</pre>
+<p>我们在<code>/application/env</code>中创建一个虚拟环境。如前所述，Python 3 使虚拟环境成为一个内置的概念，我们充分利用了它。</p>
+<pre>RUN /application/env/bin/pip install ncolony
+
+</pre>
+<p>为了更好的可重复构建，最好是复制一个需求文件——最好是一个也有散列的文件——<code>pip install</code>。然而，当我们直接使用一个包名时，更容易看到发生了什么。</p>
+<pre>RUN mkdir /application/config /application/messages
+
+</pre>
+<p>NColony 需要两个目录才能正常工作:一个用于配置，一个用于消息。我们在<code>/application</code>下创建它们。配置是需要运行的一组进程及其参数。消息是瞬时请求——通常是重启一个或多个进程的请求。</p>
+<pre>RUN /application/env/bin/python -m ncolony \
+
+</pre>
+<p>我们从安装在<code>/application/env</code>虚拟环境中的 NColony 运行子命令。</p>
+<pre>--config /application/config \
+--messages /application/messages \
+
+</pre>
+<p>我们传递 NColony 的参数。虽然在这种情况下没有使用 messages 目录，但是最好将它们都传递给所有命令。</p>
+<pre>ctl \
+
+</pre>
+<p>Control ( <code>ctl</code>)是控制配置的 NColony 子命令。</p>
+<pre>--cmd /application/env/bin/python \
+
+</pre>
+<p>我们运行与我们运行的 Python 相同的 Python。注意，一般来说，这对于 NColony 来说是不必要的。然而，为不同的用途编写使用完全不同的解释器的代码会令人困惑。</p>
+<pre>--arg=-m \
+--arg=twisted \
+
+</pre>
+<p>NColony 正在监控的进程不一定是一个扭曲的进程，但在我们的例子中，它将是一个扭曲的进程——事实上，是另一个<code>tap</code>插件。</p>
+<pre>--arg=web
+
+</pre>
+<p>当没有给定参数时，web <code>tap</code>插件显示一个演示 web 应用程序。这对于快速演示和检查来说非常有用——就像这个例子一样。</p>
+<pre>FROM python:3-slim
+
+</pre>
+<p>第二行<code>FROM</code>开始生产 Docker 图像。注意——当构建完成时，到目前为止构建的所有东西都将被<em class="EmphasisTypeItalic ">丢弃</em>。早期步骤存在的唯一原因是从那个短暂的阶段复制。这个源映像是一个最小的 Debian，加上一个已安装的 Python 3。</p>
+<pre>COPY --from=0 /application/ /application/
+
+</pre>
+<p>我们复制整个应用程序目录。因为这个目录既有虚拟环境又有 NColony 配置，所以我们不需要其他东西。这一行的简单性解释了我们为设置这个目录所做的所有细致工作的价值。</p>
+<pre>ENTRYPOINT ["/application/env/bin/python", \ "-m", \
+            "twisted", \ "ncolony", \
+            "--config", "/application/config", \
+            "--messages", "/application/messages"]
+
+</pre>
+<p class="Para" id="Par144">最后，我们配置入口点。由于 NColony 本身是一个 tap 插件，我们再次运行的命令是<code>python -m twisted &lt;plugin&gt;</code>。</p>
+<p class="Para" id="Par145">在这个例子中，我们可以直接运行 web 服务器作为入口点。然而，一个实际上需要几个进程的更现实的例子会掩盖让 NColony 在 Docker 中运行的基本机制。</p>
+
+
+<h2 class="Heading">摘要</h2>
+<p class="Para" id="Par146">Docker、Python 和 Twisted 是互补的技术。具有多阶段构建和注册的 Docker 为 Python 提供了一种标准化的方式来指定构建过程和打包。Twisted 及其进程管理原语为 Docker 提供了一个有用的 PID 1，它可以独立完成有用的工作——例如 web 服务器——或者是一个强大的基础层 NColony 非常适合 Docker 层模型。</p>
+<p class="Para" id="Par147">Docker 是构建、打包和运行 Twisted 应用程序的实用方法，而 Twisted 是在 Docker 内部运行的有用工具。</p>
+
+
+</body>
+</html>

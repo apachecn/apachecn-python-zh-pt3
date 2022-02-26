@@ -1,0 +1,387 @@
+<html lang="en">
+<head><title>Building in the Pipeline with Go Continuous Delivery</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">9.持续交付中的构建</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">前面的章节已经展示了从源代码到部署的基本步骤的自动化:构建、发布和部署。现在缺少的是将它们结合在一起的粘合剂:轮询源代码存储库，将包从构建服务器发送到存储库服务器并通常控制流程，当一个步骤失败时中止管道实例，等等。</p>
+<p class="Para" id="Par3">我们将用 ThoughtWorks 的<a href="https://www.gocd.org/"> Go 连续交付</a> <sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source"> 1 </a> </sup> (GoCD 或 Go)作为胶水。</p>
+<h2 class="Heading">9.1 关于 Go 连续交货</h2>
+<p class="Para" id="Par5">GoCD 是一个用 Java 编写的开源项目，它的 web 接口组件是用 Ruby on Rails 编写的。它在 2010 年开始作为专有软件，并在 2014 年开源。</p>
+<p class="Para" id="Par6">您可以下载适用于 Windows、OSX、Debian 和基于 RPM 的 Linux 发行版以及 Solaris 的 GoCD。ThoughtWorks 提供 GoCD 的商业支持。</p>
+<p class="Para" id="Par7">它由一个服务器组件组成，该组件保存管道配置、轮询源代码存储库的更改、调度和分发工作、收集工件、提供一个 web 界面来可视化和控制所有这些，并提供一个手动批准步骤的机制。</p>
+<p class="Para" id="Par8">一个或多个<em class="EmphasisTypeItalic ">代理</em>连接到服务器并执行构建管道中的实际任务。</p>
+<h3 class="Heading">管道组织</h3>
+<p class="Para" id="Par9">GoCD 执行的每个构建、部署或测试工作都必须是<em class="EmphasisTypeItalic ">管道</em>的一部分。流水线由一个或多个线性排列的<em class="EmphasisTypeItalic ">级</em>组成。在一个阶段中，一个或多个<em class="EmphasisTypeItalic ">作业</em>潜在地并行运行，并被单独分配给代理。<em class="EmphasisTypeItalic ">任务</em>在一个作业中连续执行。</p>
+<p class="Para" id="Par10">在任务中，您可以依赖于同一作业中以前的任务生成的文件，而在作业和阶段之间，您必须显式地捕获它们，并在以后将其作为工件进行检索。更多信息请见下文。</p>
+<p class="Para" id="Par11">最常见的任务是执行外部程序。其他任务包括检索工件或特定于语言的东西，比如运行 Ant 或 Rake 构建。<sup> <a epub:type="noteref" href="#Fn2" id="Fn2_source"> 2 </a> </sup></p>
+<p>管道可以触发其他管道，让你形成一个非循环的、有向的管道图(图<a href="#Fig1"> 9-1 </a>)。</p>
+<p><img alt="../images/456760_1_En_9_Chapter/456760_1_En_9_Fig1_HTML.png" src="../images/456760_1_En_9_Chapter/456760_1_En_9_Fig1_HTML.png" style="height:16.58em"/></p>
+<p>图 9-1</p><p class="SimplePara">GoCD 管道可以形成一个图。管道由连续的阶段组成，在这些阶段中，几个作业可以并行运行。任务在一个作业中连续执行。</p>
+
+
+
+<h3 class="Heading">作业与代理的匹配</h3>
+<p class="Para" id="Par14">当代理空闲时，它轮询服务器的工作。如果服务器有作业要运行，它使用两个标准来决定代理是否适合执行作业:<em class="EmphasisTypeItalic ">环境</em>和<em class="EmphasisTypeItalic ">资源</em>。</p>
+<p class="Para" id="Par15">每个作业都是管道的一部分，如果您选择使用环境，管道就是环境的一部分。另一方面，每个代理被配置为一个或多个环境的一部分。代理仅接受来自其环境之一的管道的作业。</p>
+<p class="Para" id="Par16">资源是用户定义的标签，描述代理必须提供的内容，在管道配置中，您可以指定作业需要哪些资源。例如，如果您定义一个作业需要使用<code>phantomjs</code>资源来测试一个 web 应用程序，那么只有您分配了该资源的代理才会执行该作业。将操作系统和版本作为资源添加是一个好主意。在前面的例子中，代理可能拥有<code>phantomjs</code>、<code>debian</code>和<code>debian-stretch</code>资源，为作业的作者提供了指定所需操作系统的粒度选择。</p>
+
+<h3 class="Heading">关于环境的一句话</h3>
+<p class="Para" id="Par17">GoCD 使得在特定环境中运行代理成为可能。例如，可以在每台测试机器和每台生产机器上运行 Go 代理，并将管道与代理环境相匹配，以确保安装步骤发生在正确环境中的正确机器上。如果您使用这个模型，您还可以使用 GoCD 将构建工件复制到需要它们的机器上。</p>
+<p class="Para" id="Par18">我选择不这样做，因为我不想在我想部署的每台机器上安装 GoCD 代理。相反，我使用在 GoCD 代理上执行的 Ansible 来控制环境中的所有机器。这需要管理 Ansible 使用的 SSH 密钥，并通过 Debian 仓库分发包。但是因为 Debian 无论如何都需要一个存储库来解决依赖性，所以这并不是额外的负担。</p>
+
+<h3 class="Heading">材料</h3>
+<p class="Para" id="Par19">GoCD 中的一个<em class="EmphasisTypeItalic ">素材</em>有两个用途:它触发一个管道，它提供管道中的任务可以使用的文件。</p>
+<p class="Para" id="Par20">我倾向于使用 Git 存储库作为素材，GoCD 可以轮询这些存储库，在新版本可用时触发管道。GoCD 代理还将存储库克隆到代理执行其作业的文件系统中。</p>
+<p class="Para" id="Par21">有针对各种源代码控制系统的材料插件，比如 Subversion (svn)和 mercurial，还有将 Debian 和 RPM 包存储库视为材料的插件。</p>
+<p class="Para" id="Par22">最后，管线可以作为其他管线的材料。使用此功能，您可以构建管线图。</p>
+
+<h3 class="Heading">史前古器物</h3>
+<p class="Para" id="Par23">GoCD 可以收集<em class="EmphasisTypeItalic ">工件</em>，这些工件是由一个作业生成的文件或目录。同一管道的后续部分，甚至是其他连接的管道，都可以检索这些工件。工件的检索不限于在同一台代理机器上创建的工件。</p>
+<p class="Para" id="Par24">您还可以从 web 界面和 <a href="https://api.gocd.org/current/"> GoCD 服务器提供的</a>REST API 中检索工件。<sup> <a epub:type="noteref" href="#Fn3" id="Fn3_source"> 3 </a> </sup></p>
+<p class="Para" id="Par26">当磁盘空间变得不足时，可以将工件存储库配置为丢弃旧版本。</p>
+
+
+<h2 class="Heading">9.2 安装</h2>
+<p class="Para" id="Par27">为了使用 GoCD，您必须在一台机器上安装 GoCD 服务器，并在至少一台机器上安装 GoCD 代理。这可以与服务器在同一台机器上，也可以在不同的机器上，只要它可以通过端口 8153 和 8154 连接到 GoCD 服务器。</p>
+<p class="Para" id="Par28">当您的基础设施和管道数量增长时，您可能会运行几个 Go 代理。</p>
+<h3 class="Heading">在 Debian 上安装 GoCD 服务器</h3>
+<p>要在基于 Debian 的操作系统上安装 GoCD 服务器，首先你必须确保你可以通过 HTTPS 下载 Debian 软件包。</p>
+<pre>$ apt-get install -y apt-transport-https
+
+</pre>
+<p>然后，您必须配置软件包源。</p>
+<pre>$ echo 'deb https://download.gocd.org /' \
+        &gt; /etc/apt/sources.list.d/gocd.list
+$ curl https://download.gocd.org/GOCD-GPG-KEY.asc \
+        | apt-key add -
+
+</pre>
+<p>最后安装。</p>
+<pre>$ apt-get update &amp;&amp; apt-get install -y go-server
+
+</pre>
+<p class="Para" id="Par32">在 Debian 9 上，codename <em class="EmphasisTypeItalic "> Stretch </em>，Java 8 开箱即用。在 Debian 的旧版本中，你可能不得不从其他来源安装 Java 8，比如<a href="https://backports.debian.org/"> Debian Backports </a>。<sup> <a epub:type="noteref" href="#Fn4" id="Fn4_source"> 4 </a> </sup></p>
+<p>现在，当您将浏览器指向 HTTPS Go 服务器的端口 8154(忽略 SSL 安全警告)或 HTTP 的端口 8153 时，您应该会看到 GoCD 服务器的 web 界面(图<a href="#Fig2"> 9-2 </a>)。</p>
+<p><img alt="../images/456760_1_En_9_Chapter/456760_1_En_9_Fig2_HTML.jpg" src="../images/456760_1_En_9_Chapter/456760_1_En_9_Fig2_HTML.jpg" style="height:17.55em"/></p>
+<p>图 9-2</p><p class="SimplePara">GoCD 的初始网络界面</p>
+
+
+<p class="Para" id="Par35">如果你得到一个<em class="EmphasisTypeItalic ">连接被拒绝</em>的错误，检查<code>/var/log/go-server/</code>下的文件，寻找出错的提示。</p>
+<p class="Para" id="Par36">为了防止未经认证的访问，您可以安装认证插件，例如基于<a href="https://github.com/gocd/gocd-filebased-authentication-plugin">密码文件的认证</a> <sup> <a epub:type="noteref" href="#Fn5" id="Fn5_source"> 5 </a> </sup>或基于 LDAP 或 Active Directory 的认证<a href="https://github.com/gocd/gocd-ldap-authentication-plugin"/>。<sup> <a epub:type="noteref" href="#Fn6" id="Fn6_source"> 6 </a> </sup></p>
+
+<h3 class="Heading">在 Debian 上安装 GoCD 代理</h3>
+<p class="Para" id="Par39">在您想要执行自动构建和部署步骤的一台或多台机器上，您必须安装一个 Go 代理，它将连接到服务器并轮询它的工作。</p>
+<p>关于 GoCD 代理的自动安装示例，请参见第<a href="08.html"> 8 </a>章。如果您想改为手动安装，您必须执行与安装 GoCD 服务器时相同的前三个步骤，以确保您可以从 GoCD 软件包资源库安装软件包。然后，当然，你安装 Go 代理。在基于 Debian 的系统上，如下所示:</p>
+<pre>$ apt-get install -y apt-transport-https
+$ echo 'deb https://download.gocd.org /' &gt;
+    /etc/apt/sources.list.d/gocd.list
+$ curl https://download.gocd.org/GOCD-GPG-KEY.asc \
+    | apt-key add -
+$ apt-get update &amp;&amp; apt-get install -y go-agent
+
+</pre>
+<p>然后编辑文件<code>/etd/default/go-agent</code>。第一行应为</p>
+<pre>GO_SERVER_URL=https://127.0.0.1:8154/go
+
+</pre>
+<p>将变量更改为指向您的 GoCD 服务器，然后启动代理。</p>
+<pre>$ service go-agent start
+
+</pre>
+<p>几秒钟后，代理将联系服务器。当您在 GoCD 服务器的 web 界面中单击代理菜单时，您应该会看到代理(图<a href="#Fig3"> 9-3 </a>)。</p>
+<p><img alt="../images/456760_1_En_9_Chapter/456760_1_En_9_Fig3_HTML.jpg" src="../images/456760_1_En_9_Chapter/456760_1_En_9_Fig3_HTML.jpg" style="height:8.88em"/></p>
+<p>图 9-3</p><p class="SimplePara">GoCD 的代理管理界面截图。(<code>lara</code>是这里代理的主机名。)</p>
+
+
+
+<h3 class="Heading">第一次接触 GoCD 的 XML 配置</h3>
+<p class="Para" id="Par44">有两种方法可以配置 GoCD 服务器:通过 web 界面和 XML 格式的配置文件。您还可以通过 web 界面编辑 XML 配置。<sup> <a epub:type="noteref" href="#Fn7" id="Fn7_source"> 7 </a> </sup></p>
+<p class="Para" id="Par46">虽然 web 界面是探索 GoCD 功能的好方法，但由于点击次数太多，它很快就变得令人讨厌。使用具有良好 XML 支持的编辑器可以更快地完成工作，而且它更适合于紧凑的解释，所以这就是我在这里选择的路线。您还可以在同一个 GoCD 服务器实例上使用这两种方法。</p>
+<p>在管理菜单中，Config XML 项目允许您查看和编辑服务器配置。清单<a href="#PC7"> 9-1 </a>是一个原始的 XML 配置，已经注册了一个代理。</p>
+<pre>
+&lt;?xml version="1.0" encoding="utf-8"?&gt;
+
+
+&lt;cruise
+
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:noNamespaceSchemaLocation="cruise-config.xsd"
+    schemaVersion="77"&gt;
+&lt;server artifactsdir="artifacts"
+        commandRepositoryLocation="default"
+        serverId="b2ce4653-b333-4b74-8ee6-8670be479df9"&gt;
+
+&lt;/server&gt;
+
+
+&lt;agents&gt;
+
+    &lt;agent hostname="lara" ipaddress="192.168.2.43"
+        uuid="19e70088-927f-49cc-980f-2b1002048e09" /&gt;
+
+&lt;/agents&gt;
+
+
+&lt;/cruise&gt;
+
+
+Listing 9-1Baseline GoCD XML Configuration, with One Agent Registered
+
+
+</pre>
+<p class="Para" id="Par48">即使您遵循相同的步骤，代理的<code>serverId</code>和数据在您的安装中也会有所不同。</p>
+<p>为了给代理一些资源，您可以将<code>&lt;agents&gt;</code>部分中的<code>&lt;agent .../&gt;</code>标记改为如清单<a href="#PC8"> 9-2 </a>所示。</p>
+<pre>&lt;agent hostname="lara" ipaddress="192.168.2.43"
+    uuid="19e70088-927f-49cc-980f-2b1002048e09"&gt;
+  &lt;resources&gt;
+    &lt;resource&gt;debian-stretch&lt;/resource&gt;
+    &lt;resource&gt;build&lt;/resource&gt;
+    &lt;resource&gt;aptly&lt;/resource&gt;
+  &lt;/resources&gt;
+
+&lt;/agent&gt;
+
+
+
+
+
+
+Listing 9-2GoCD XML Configuration for an Agent with Resources
+
+
+</pre>
+
+<h3 class="Heading">创建 SSH 密钥</h3>
+<p>对于 GoCD 来说，拥有一个没有密码的 SSH 密钥是很方便的，例如，能够通过 SSH 克隆 Git 存储库。要创建一个，请在服务器上运行以下命令:</p>
+<pre>$ su - go
+$ ssh-keygen -t rsa -b 2048 -N " -f ~/.ssh/id_rsa
+
+</pre>
+<p class="Para" id="Par51">要么将生成的<code>.ssh</code>目录和其中的文件复制到每个代理的<code>/var/go</code>目录中(记得在最初创建时设置所有者和权限),要么在每个代理上创建一个新的密钥对。</p>
+
+
+<h2 class="Heading">9.3 管道中的建筑</h2>
+<p class="Para" id="Par52">触发 Debian 包的构建需要从 Git 存储库中获取源代码，将其配置为 GoCD 材料，然后调用带有一些选项的<code>dpkg-buildpackage</code>命令，最后收集结果文件。</p>
+<p>这里(清单<a href="#PC10"> 9-3 </a>)是构建<code>python-matheval</code>包的第一步，用 GoCD 的 XML 配置表示。</p>
+<pre>&lt;pipelines group="deployment"&gt;
+  &lt;pipeline name="python-matheval"&gt;
+    &lt;materials&gt;
+      &lt;git
+url="https://github.com/python-ci-cd/python-matheval.git"
+        dest="source" /&gt;
+    &lt;/materials&gt;
+    &lt;stage name="build" cleanWorkingDir="true"&gt;
+       &lt;jobs&gt;
+         &lt;job name="build-deb" timeout="5"&gt;
+          &lt;tasks&gt;
+            &lt;exec command="/bin/bash" workingdir="source"&gt;
+              &lt;arg&gt;-c&lt;/arg&gt;
+              &lt;arg&gt;dpkg-buildpackage -b -us -uc&lt;/arg&gt;
+            &lt;/exec&gt;
+          &lt;/tasks&gt;
+          &lt;artifacts&gt;
+            &lt;artifact src="*.deb" dest="debian-packages/"
+                type="build" /&gt;
+          &lt;/artifacts&gt;
+          &lt;resources&gt;
+            &lt;resource&gt;debian-stretch&lt;/resource&gt;
+            &lt;resource&gt;build&lt;/resource&gt;
+          &lt;/resources&gt;
+        &lt;/job&gt;
+      &lt;/jobs&gt;
+    &lt;/stage&gt;
+  &lt;/
+pipeline&gt;
+
+
+
+
+&lt;/pipelines&gt;
+
+
+Listing 9-3Simple Approach to Building a Debian Package in GoCD
+
+
+</pre>
+<p class="Para" id="Par54">您可以在<a href="https://github.com/python-ci-cd/deployment-utils">deployment-utils</a><sup><a epub:type="noteref" href="#Fn8" id="Fn8_source">8</a></sup>存储库的<code>gocd</code>目录中找到这个配置和所有下面的 XML 配置。</p>
+<p class="Para" id="Par56">最外面的标记是管道组，它有一个名称。它可用于对可用管道进行分类，也可用于管理权限。</p>
+<p class="Para" id="Par57">第二层是带有名称的<code>&lt;pipeline&gt;</code>，它包含一个材料列表和一个或多个阶段。</p>
+<h3 class="Heading">目录布局</h3>
+<p class="Para" id="Par58">每次运行某个阶段中的作业时，分配给该作业的 GoCD 代理都会准备一个目录，在该目录中可以使用这些材料。在 Linux 上，这个目录默认为<code>/var/lib/go-agent/pipelines/</code>，后跟管道名。GoCD 配置中的路径相对于此路径。</p>
+<p class="Para" id="Par59">例如，前面的 material 定义包含属性<code>dest="source"</code>，所以这个 Git 存储库的工作副本的绝对路径是<code>/var/lib/go-agent/pipelines/python-matheval/source</code>。省略掉<code>dest="..."</code>会有效，并且会减少一个目录级别，但是这也会阻止我们在将来使用第二个材料。</p>
+<p class="Para" id="Par60">可用材料类型和选项列表见<a href="https://docs.gocd.org/current/configuration/configuration_reference.html#materials">配置参考</a> <sup> <a epub:type="noteref" href="#Fn9" id="Fn9_source"> 9 </a> </sup>。<a href="http://www.gocd.org/plugins/">插件可用于</a> <sup> <a epub:type="noteref" href="#Fn10" id="Fn10_source"> 10 </a> </sup>添加更多的材料类型。</p>
+
+<h3 class="Heading">阶段、作业、任务和工件</h3>
+<p class="Para" id="Par63">管道中的所有阶段都是串行运行的，并且只有在前一个阶段成功的情况下，每个阶段才会运行。每个阶段都有一个名称，它既用于前端，也用于获取该阶段中产生的工件。</p>
+<p class="Para" id="Par64">在前面的例子中，我给 stage 赋予了属性<code>cleanWorkingDir="true"</code>，这使得 GoCD 删除在之前的构建过程中创建的文件，并放弃对版本控制下的文件的更改。这往往是一个很好的选择；否则，您可能会不知不觉地陷入前一个构建影响当前构建的境地，这对于调试来说确实很痛苦。</p>
+<p class="Para" id="Par65">作业有可能在一个阶段中并行执行，并且由于与阶段相同的原因而命名。如果有几个代理可以运行这些作业，则它们只能并行运行。</p>
+<p class="Para" id="Par66">GoCD 代理连续执行作业中的任务。我倾向于主要使用<code>&lt;exec&gt;</code>任务(和<code>&lt;fetchartifact&gt;</code>，你将在下一章看到)，它们调用系统命令。他们遵循 UNIX 惯例，将退出状态 0 视为成功，其他都视为失败。</p>
+<p class="Para" id="Par67">对于更复杂的命令，我在 Git 存储库中创建 shell、Perl 或 Python 脚本，并将存储库作为素材添加到管道中，这使得它们在构建过程中可用，而无需额外的工作。</p>
+<p class="Para" id="Par68">我们示例中的<code>&lt;exec&gt;</code>任务调用<code>/bin/bash -c 'dpkg-buildpackage -b -us -uc'</code>。这是一个<a href="https://en.wikipedia.org/wiki/Cargo_cult_programming">货邪教编程</a>、<sup> <a epub:type="noteref" href="#Fn11" id="Fn11_source"> 11 </a> </sup>的案例，因为直接调用<code>dpkg-buildpackage</code>也可以。啊，好吧，我们可以稍后修改这个…</p>
+<p class="Para" id="Par70">构建 Debian 包，并在源代码的 Git 检验中执行。它生成一个<code>.deb</code>文件，一个<code>.changes</code>文件，可能还有其他一些带有元数据的文件。它们是在管道的根目录中创建的，比 Git checkout 高一级。</p>
+<p class="Para" id="Par71">因为这些是我们稍后想要处理的文件，至少是<code>.deb</code>文件，我们让 GoCD 将它们存储在一个名为<em class="EmphasisTypeItalic ">工件库</em>的内部数据库中。这就是配置中的<code>&lt;artifact&gt;</code>标签指示 GoCD 做的事情。</p>
+<p class="Para" id="Par72">生成的包文件的名称取决于构建的 Debian 包的版本号(来自 Git 存储库中的<code>debian/changelog</code>文件)，所以以后不容易通过名称引用它们。这就是<code>dest="debian-packages/"</code>发挥作用的地方:它让 GoCD 将工件存储在一个有固定名称的目录中。随后的阶段可以通过固定的目录名从这个目录中检索所有工件文件。</p>
+
+<h3 class="Heading">行动中的管道</h3>
+<p>如果没有出错(从来没有出错过，对吗？)，图<a href="#Fig4"> 9-4 </a>大致展示了运行新管道后 web 界面的样子。</p>
+<p><img alt="../images/456760_1_En_9_Chapter/456760_1_En_9_Fig4_HTML.jpg" src="../images/456760_1_En_9_Chapter/456760_1_En_9_Fig4_HTML.jpg" style="height:20.8em"/></p>
+<p>图 9-4</p><p class="SimplePara">成功运行构建阶段后的管道概述</p>
+
+
+<p class="Para" id="Par74">每当 Git 存储库中有新的提交时，GoCD 都会很高兴地构建一个 Debian 包并存储起来以备将来使用。自动化构建，耶！</p>
+
+<h3 class="Heading">版本回收被认为有害</h3>
+<p class="Para" id="Par75">当构建 Debian 包时，工具通过查看<code>debian/changelog</code>文件的顶部来确定最终包的版本号。这意味着，每当有人在没有新的 changelog 条目的情况下推送代码或文档变更时，生成的 Debian 包与前一个包具有相同的版本号。</p>
+<p class="Para" id="Par76">大多数 Debian 工具假设包名、版本和架构的元组唯一地标识了包的修订。将旧版本号的包的新版本塞进一个存储库中肯定会引起麻烦。大多数存储库管理软件只是简单地拒绝接受循环使用某个版本的包的副本。在要安装软件包的目标机器上，如果版本号保持不变，升级软件包不会有任何作用。</p>
+
+<h3 class="Heading">构建唯一的版本号</h3>
+<p>有几个来源可以用来生成唯一的版本号。</p><ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par78">随机性(例如，以 UUIDs 的形式)</p></li>
+<li><p class="Para" id="Par79">当前日期和时间</p></li>
+<li><p class="Para" id="Par80">Git 存储库本身</p></li>
+<li><p class="Para" id="Par81">GoCD 公开的几个有用的环境变量 <sup> <a epub:type="noteref" href="#Fn12" id="Fn12_source"> 12 </a> </sup></p></li>
+</ul>
+
+
+<p class="Para" id="Par83">后者大有可为。<code>GO_PIPELINE_COUNTER</code>是一个单调计数器，每次 GoCD 运行管道时它都会增加，所以这是一个很好的版本号来源。GoCD 允许手动重新运行阶段，所以最好与<code>GO_STAGE_COUNTER</code>结合使用。就 shell 脚本而言，使用<code>$GO_PIPELINE_COUNTER.$GO_STAGE_COUNTER</code>作为版本字符串听起来是一种不错的方法。</p>
+<p class="Para" id="Par84">但是，还有更多。GoCD 允许您使用特定版本的材料触发管道，因此您可以运行新的管道来构建旧版本的软件。如果这样做，使用<code>GO_PIPELINE_COUNTER</code>作为版本字符串的第一部分并不能反映旧代码库的使用。</p>
+<p class="Para" id="Par85"><code>git describe</code>是一种计算提交次数的既定方法。默认情况下，它打印存储库中的最后一个标记，如果<code>HEAD</code>没有解析为与该标记相同的提交，它会添加自该标记以来的提交次数和以<code>g</code>为前缀的缩写 SHA1 哈希，例如，提交<code>4232204</code>的<code>2016.04-32-g4232204</code>，这是在标记<code>2016.04</code>之后的 32 次提交。选项<code>--long</code>强制它总是打印提交次数和散列，即使 HEAD 指向一个标签。</p>
+<p>我们不需要版本号的提交散列，因此构建合适版本号的 shell 脚本如下所示。</p>
+<pre>
+#!/bin/bash
+
+
+set -e
+set -o pipefail
+v=$(git describe --long |sed 's/-g[A-Fa-f0-9]*$//')
+version="$v.${GO_PIPELINE_COUNTER:-0}.${GO_STAGE_COUNTER:-0}"
+
+</pre>
+<p>Bash 的<code>${VARIABLE:-default}</code>语法是让脚本在 GoCD 代理环境之外工作的好方法。这个脚本需要在 Git 存储库中设置一个标记。如果没有，则失败，并显示来自<code>git describe</code>的消息:</p>
+<pre>fatal: No names found, cannot describe anything.
+
+</pre>
+
+<h3 class="Heading">围绕构建的其他零碎内容</h3>
+<p>现在我们有了一个惟一的版本字符串，我们必须指示构建系统使用这个版本字符串。这通过用期望的版本号在<code>debian/changelog</code>中写入一个新条目来实现。<code>debchange</code>工具为我们实现了自动化。要使它可靠地工作，有几个选项是必需的。</p>
+<pre>export DEBFULLNAME='Go Debian Build Agent'
+export DEBEMAIL='go-noreply@example.com'
+debchange --newversion=$version --force-distribution -b \
+    --distribution="${DISTRIBUTION:-stretch}" 'New Version'
+
+</pre>
+<p>当我们想要在管道的后期引用这个版本号时(是的，将会有更多)，在一个文件中提供它是很方便的。在输出中包含它也很方便，所以我们在脚本中还需要两行。</p>
+<pre>echo $version
+echo $version &gt; ../version
+
+</pre>
+<p>当然，必须触发实际的构建，如下所示:</p>
+<pre>dpkg-buildpackage -b -us -uc
+
+</pre>
+
+<h3 class="Heading">将它插入 GoCD</h3>
+<p>为了让 GoCD 可以访问这个脚本，并让它处于版本控制之下，我将这个脚本放入一个 Git 存储库中，命名为<code>debian-autobuild</code>，并将这个存储库作为一个素材添加到管道中(清单<a href="#PC16"> 9-4 </a>)。</p>
+<pre>&lt;pipeline name="python-matheval"&gt;
+  &lt;materials&gt;
+    &lt;git
+url="https://github.com/python-ci-cd/python-matheval.git"
+        dest="source" materialName="python-matheval" /&gt;
+    &lt;git
+url="https://github.com/python-ci-cd/deployment-utils.git"
+    dest="deployment-utils" materialName="deployment-utils" /&gt;
+  &lt;/materials&gt;
+  &lt;stage name="build" cleanWorkingDir="true"&gt;
+    &lt;jobs&gt;
+      &lt;job name="build-deb" timeout="5"&gt;
+        &lt;tasks&gt;
+          &lt;exec command="../deployment-utils/debian-autobuild"
+                workingdir="source" /&gt;
+        &lt;/tasks&gt;
+        &lt;artifacts&gt;
+          &lt;artifact src="version" type="build"/&gt;
+          &lt;artifact src="*.deb" dest="debian-packages/"
+            type="build" /&gt;
+        &lt;/artifacts&gt;
+        &lt;resources&gt;
+          &lt;resource&gt;debian-stretch&lt;/resource&gt;
+          &lt;resource&gt;build&lt;/resource&gt;
+        &lt;/resources&gt;
+      &lt;/job&gt;
+
+
+
+    &lt;/jobs&gt;
+  &lt;/stage&gt;
+
+&lt;/pipeline&gt;
+
+
+Listing 9-4GoCD Configuration for Building Packages with Distinct Version Numbers
+
+
+</pre>
+<p class="Para" id="Par92">现在，GoCD 在每次提交到 Git 存储库时自动构建 Debian 包，并给每个包一个不同的版本字符串。</p>
+
+
+<h2 class="Heading">9.4 总结</h2>
+<p class="Para" id="Par93">GoCD 是一个开源工具，可以轮询您的 Git 存储库，并通过专用代理触发构建。它是通过 web 界面配置的，可以通过点击助手或提供 XML 配置。</p>
+<p class="Para" id="Par94">必须注意为每个版本构造有意义的版本号。Git 标记、自最后一个标记以来的提交次数以及 GoCD 公开的计数器是构建这种版本号的有用组件。</p>
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par4"><a href="http://www.gocd.org/"> <code>www.gocd.org/</code> </a>。</p>
+
+ 
+
+<a href="#Fn2_source">2</a><p class="Para" id="Par12"><code>&lt;ant&gt;</code>和<code>&lt;rake&gt;</code>任务执行同名的专门构建器，并允许您指定目标和构建文件。详见<a href="https://docs.gocd.org/current/configuration/configuration_reference.html#ant"> <code>https://docs.gocd.org/current/configuration/configuration_reference.html#ant</code> </a>。</p>
+
+ 
+
+<a href="#Fn3_source">3</a><p class="Para" id="Par25"><a href="https://api.gocd.org/current/"> <code>https://api.gocd.org/current/</code> </a>。</p>
+
+ 
+
+<a href="#Fn4_source">4</a><p class="Para" id="Par33"><a href="https://backports.debian.org/"> <code>https://backports.debian.org/</code> </a>。</p>
+
+ 
+
+<a href="#Fn5_source">5</a><p class="Para" id="Par37"><a href="https://github.com/gocd/gocd-filebased-authentication-plugin"> <code>https://github.com/gocd/gocd-filebased-authentication-plugin</code> </a>。</p>
+
+ 
+
+<a href="#Fn6_source">6</a><p class="Para" id="Par38"><a href="https://github.com/gocd/gocd-ldap-authentication-plugin"> <code>https://github.com/gocd/gocd-ldap-authentication-plugin</code> </a>。</p>
+
+ 
+
+<a href="#Fn7_source">7</a><p class="Para" id="Par45">从 GoCD 版本 16.7 开始，管道配置可以交换到外部版本控制库，并且通过插件，甚至可以用不同的格式编写，比如 YAML。虽然这似乎是一个非常有前途的方法，但介绍它超出了本书的范围。</p>
+
+ 
+
+<a href="#Fn8_source">8</a><p class="Para" id="Par55"><a href="https://github.com/python-ci-cd/deployment-utils"> <code>https://github.com/python-ci-cd/deployment-utils</code> </a>。</p>
+
+ 
+
+<a href="#Fn9_source">9</a><p class="Para" id="Par61"><a href="https://docs.gocd.org/current/configuration/configuration_reference.html#materials"> <code>https://docs.gocd.org/current/configuration/configuration_reference.html#materials</code> </a>。</p>
+
+ 
+
+<a href="#Fn10_source">10</a><p class="Para" id="Par62"><a href="http://www.gocd.org/plugins/"> <code>www.gocd.org/plugins/</code> </a>。</p>
+
+ 
+
+<a href="#Fn11_source">11</a><p class="Para" id="Par69">维基百科，《货物邪教编程》，<a href="https://en.wikipedia.org/wiki/Cargo_cult_programming"> <code>https://en.wikipedia.org/wiki/Cargo_cult_programming</code> </a>，2018 年。</p>
+
+ 
+
+<a href="#Fn12_source">12</a><p class="Para" id="Par82"><a href="https://docs.gocd.org/current/faq/dev_use_current_revision_in_build.html"> <code>https://docs.gocd.org/current/faq/dev_use_current_revision_in_build.html</code> </a>。</p>
+
+ 
+
+</aside>
+
+</body>
+</html>

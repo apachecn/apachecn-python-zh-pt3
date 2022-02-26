@@ -1,0 +1,217 @@
+<html lang="en">
+<head><title>Distributing and Deploying Packages in the Pipeline</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">10.在管道中分发和部署包</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">前一章给我们留下了 GoCD 管道的开端。它会在每次新的提交被推送到 Git 时自动构建一个 Debian 包，并为每次构建生成一个唯一的版本号。最后，它捕获构建的包和包含版本号的文件<code>version</code>,作为工件。接下来的任务是将它上传到 Debian 仓库，并部署到目标机器上。</p>
+<h2 class="Heading">10.1 管道上传</h2>
+<p>第 6 章，关于分发软件包，已经介绍了一个小程序，用于创建和填充 Debian 知识库。如果您将它添加到那一章的<code>deployment-utils</code> Git 存储库中，那么您可以自动上传新构建的带有这个额外 GoCD 配置的包(清单<a href="#PC1"> 10-1 </a>)，在构建阶段之后插入。</p>
+<pre>&lt;stage name="upload-testing"&gt;
+  &lt;jobs&gt;
+    &lt;job name="upload-testing"&gt;
+      &lt;tasks&gt;
+        &lt;fetchartifact pipeline="" stage="build"
+            job="build-deb" srcdir="debian-packages"
+            artifactOrigin="gocd"&gt;
+          &lt;runif status="passed" /&gt;
+        &lt;/fetchartifact&gt;
+
+
+
+
+        &lt;exec command="/bin/bash"&gt;
+          &lt;arg&gt;-c&lt;/arg&gt;
+  &lt;arg&gt;deployment-utils/add-package testing stretch *.deb&lt;/arg&gt;
+        &lt;/exec&gt;
+      &lt;/tasks&gt;
+      &lt;resources&gt;
+        &lt;resource&gt;aptly&lt;/resource&gt;
+      &lt;/resources&gt;
+    &lt;/job&gt;
+  &lt;/jobs&gt;
+
+&lt;/stage&gt;
+
+
+Listing 10-1GoCD Configuration for Uploading a Freshly Built Package to the testing Repository
+
+
+</pre>
+<p class="Para" id="Par4">您猜对了,<code>fetchartifact</code>任务获取存储在 GoCD 服务器的工件库中的工件。在这里，它获取目录<code>python-matheval</code>，前一阶段将 Debian 包上传到这个目录中。管道名称的空字符串指示 GoCD 使用当前管道。</p>
+<p class="Para" id="Par5">在<code>add-package</code>脚本的调用中，<code>testing</code>指的是环境的名称(可以自由选择，只要一致)，而不是 Debian 项目的测试发行版。</p>
+<p>最后，<code>aptly</code>资源选择具有相同资源的 GoCD 代理来运行作业(参见图<a href="#Fig1"> 10-1 </a>)。如果您预计您的设置会有所增长，那么您应该有一台单独的机器来为这些存储库服务。在其上安装 GoCD 代理，并为其分配该资源。您甚至可以为测试和生产存储库准备单独的机器，并给它们更多特定的资源(比如<code>aptly-testing</code>和<code>aptly-production</code>)。</p>
+<p><img alt="../images/456760_1_En_10_Chapter/456760_1_En_10_Fig1_HTML.jpg" src="../images/456760_1_En_10_Chapter/456760_1_En_10_Fig1_HTML.jpg" style="height:24.9em"/></p>
+<p>图 10-1</p><p class="SimplePara">Aptly 存储库所在的机器有一个 GoCD 代理，它从 GoCD 服务器中检索 Debian 包作为工件。目标机器将存储库配置为软件包源。</p>
+
+
+<h3 class="Heading">用户帐户和安全性</h3>
+<p class="Para" id="Par7">在前面的示例配置中，<code>add-package</code>脚本以<code>go</code>系统用户的身份运行，默认情况下，该用户在基于 Linux 的系统上的主目录是<code>/var/go</code>。这将在诸如<code>/var/go/aptly/testing/stretch/</code>的目录中创建存储库。</p>
+<p class="Para" id="Par8">在第 6 章<a href="06.html">中，假设 Aptly 在自己的系统用户账户下运行。您仍然需要给予<code>go</code>用户权限来将包添加到存储库中，但是您可以防止<code>go</code>用户修改现有的存储库，更重要的是，防止用户从用来签署包的 GPG 密钥获得访问权。</a></p>
+<p class="Para" id="Par9">如果您将存储库置于一个单独的用户之下，您需要一种跨越用户帐户障碍的方法，对于命令行应用程序来说，传统的方法是允许<code>go</code>用户通过<code>sudo</code>命令调用<code>add-package</code>。但是为了获得实际的安全性好处，您必须将<code>add-package</code>命令复制到一个位置，在那里<code>go</code>用户没有写权限。否则，可以访问<code>go</code>用户帐户的攻击者可以修改这个命令，做他/她认为合适的任何事情。</p>
+<p>假设您打算将其复制到<code>/usr/local/bin</code>，您可以添加这一行:</p>
+<pre>/etc/sudoers
+
+</pre>
+<p>到文件(列表<a href="#PC3"> 10-2 </a>)。</p>
+<pre>go ALL=(aptly) NOPASSWD: /usr/local/bin/add-package
+
+Listing 10-2/etc/sudoers Line That Allows the go User to Execute add-package As User aptly
+
+
+</pre>
+<p>然后，不是调用<code>add-package &lt;environment&gt; &lt;distribution&gt; &lt;deb package&gt;</code>，而是将它改为</p>
+<pre>$ sudo -u aptly --set-home /usr/local/bin/add-package \
+    &lt;environment&gt; &lt;distribution&gt; &lt;deb package&gt;
+
+</pre>
+<p class="Para" id="Par13"><code>--set-home</code>标志告诉<code>sudo</code>将<code>HOME</code>环境变量设置为目标用户的主目录，这里是<code>aptly</code>。</p>
+<p class="Para" id="Par14">如果你选择不走<code>sudo</code>路线，你必须调整网络服务器配置，以提供来自<code>/var/go/aptly/</code>而不是<code>/home/aptly/aptly</code>的文件。</p>
+
+
+<h2 class="Heading">10.2 在管道中部署</h2>
+<p>在第<a href="07.html"> 7 </a>章中，我们看到了如何通过 Ansible 升级(或安装，如果尚未安装的话)一个包(见图<a href="#Fig2"> 10-2 </a>，如下所示:</p>
+<pre>$ ansible -i testing web -m apt \
+    -a 'name=python-matheval state=latest update_cache=yes'
+
+</pre>
+<p>其中，<code>testing</code>是与环境同名的清单文件，<code>web</code>是要部署到的主机组，<code>python-matheval</code>是软件包的名称。</p>
+<p><img alt="../images/456760_1_En_10_Chapter/456760_1_En_10_Fig2_HTML.jpg" src="../images/456760_1_En_10_Chapter/456760_1_En_10_Fig2_HTML.jpg" style="height:25.6em"/></p>
+<p>图 10-2</p><p class="SimplePara">GoCD 代理运行 Ansible，通过 SSH 连接到目标机器，安装所需的软件包</p>
+
+
+<p>在 GoCD 中，你可以在<code>upload-testing</code>阶段(清单<a href="#PC6"> 10-3 </a>)之后，作为一个单独的阶段来完成这项工作。</p>
+<pre>&lt;stage name="deploy-testing"&gt;
+  &lt;jobs&gt;
+    &lt;job name="deploy-testing"&gt;
+      &lt;tasks&gt;
+        &lt;exec command="ansible" workingdir="deployment-utils/ansible/"&gt;
+          &lt;arg&gt;--inventory-file=testing&lt;/arg&gt;
+          &lt;arg&gt;web&lt;/arg&gt;
+          &lt;arg&gt;-m&lt;/arg&gt;
+          &lt;arg&gt;apt&lt;/arg&gt;
+          &lt;arg&gt;-a&lt;/arg&gt;
+          &lt;arg&gt;name=python-matheval state=latest update_cache=yes&lt;/arg&gt;
+          &lt;runif status="passed" /&gt;
+        &lt;/exec&gt;
+      &lt;/tasks&gt;
+    &lt;/job&gt;
+  &lt;/jobs&gt;
+
+&lt;/stage&gt;
+
+
+Listing 10-3GoCD Configuration for Automatically Installing a Package
+
+
+</pre>
+<p class="Para" id="Par18">这里假设您将库存文件添加到了<code>deployment-utils</code> Git 仓库的<code>ansible</code>目录中，并且 Debian 仓库已经在目标机器上配置好了，正如第<a href="07.html"> 7 </a>章中所讨论的。</p>
+
+<h2 class="Heading">10.3 结果</h2>
+<p>要运行新阶段，可以通过点击 web 前端管道概览中的“播放”三角形来触发管道的完整运行，或者在管道历史视图中手动触发该阶段。您可以登录目标机器，检查软件包是否安装成功。</p>
+<pre>$ dpkg -l python-matheval
+Desired=Unknown/Install/Remove/Purge/Hold
+| Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/
+|/ Err?=(none)/Reinst-required (Status,Err: uppercase=bad)
+||/ Name          Version     Architecture Description
++++-==============-============-============-==============
+ii python-matheval  0.1-0.7.1   all         Web service
+
+</pre>
+<p>并验证该服务正在运行</p>
+<pre>$ systemctl status python-matheval
+  python-matheval.service - Package installation informati
+   Loaded: loaded (/lib/systemd/system/python-matheval.ser
+   Active: active (running) since Sun 2016-03-27 13:15:41
+  Process: 4439 ExecStop=/usr/bin/hypnotoad -s /usr/lib/py
+ Main PID: 4442 (/usr/lib/packag)
+   CGroup: /system.slice/python-matheval.service
+           ├─4442 /usr/lib/python-matheval/python-matheval
+           ├─4445 /usr/lib/python-matheval/python-matheval
+           ├─4446 /usr/lib/python-matheval/python-matheval
+           ├─4447 /usr/lib/python-matheval/python-matheval
+           └─4448 /usr/lib/python-matheval/python-matheval
+
+</pre>
+<p>您还可以从主机检查服务是否在端口 8080 上响应，正如它应该做的那样。</p>
+<pre>$ curl --data '["+", 5]' -XPOST http://172.28.128.3:8800
+5
+
+</pre>
+
+<h2 class="Heading">10.4 一直到生产</h2>
+<p>上传和部署到生产环境的工作方式与测试环境相同。因此，所有需要做的就是复制最后两条管道的配置，用<code>production</code>替换每次出现的<code>testing</code>，并添加一个手动批准按钮，这样生产部署仍然是一个有意识的决定(列出<a href="#PC10"> 10-4 </a>)。</p>
+<pre>&lt;stage name="upload-production"&gt;
+  &lt;approval type="manual" /&gt;
+  &lt;jobs&gt;
+    &lt;job name="upload-production"&gt;
+      &lt;tasks&gt;
+        &lt;fetchartifact pipeline="" stage="build" job="build-deb" srcdir="debian-packages" artifactOrigin="gocd"&gt;
+          &lt;runif status="passed" /&gt;
+        &lt;/fetchartifact&gt;
+        &lt;exec command="/bin/bash"&gt;
+          &lt;arg&gt;-c&lt;/arg&gt;
+          &lt;arg&gt;deployment-utils/add-package production \ stretch *.deb&lt;/arg&gt;
+        &lt;/exec&gt;
+      &lt;/tasks&gt;
+      &lt;resources&gt;
+        &lt;resource&gt;aptly&lt;/resource&gt;
+      &lt;/resources&gt;
+    &lt;/job&gt;
+
+
+
+  &lt;/jobs&gt;
+
+&lt;/stage&gt;
+
+&lt;stage name="deploy-production"&gt;
+  &lt;jobs&gt;
+    &lt;job name="deploy-production"&gt;
+      &lt;tasks&gt;
+        &lt;exec command="ansible" workingdir="deployment-utils/ansible/"&gt;
+          &lt;arg&gt;--inventory-file=production&lt;/arg&gt;
+          &lt;arg&gt;web&lt;/arg&gt;
+          &lt;arg&gt;-m&lt;/arg&gt;
+          &lt;arg&gt;apt&lt;/arg&gt;
+          &lt;arg&gt;-a&lt;/arg&gt;
+  &lt;arg&gt;name=python-matheval state=latest update_cache=yes&lt;/arg&gt;
+          &lt;runif status="passed" /&gt;
+        &lt;/exec&gt;
+      &lt;/tasks&gt;
+    &lt;/job&gt;
+  &lt;/jobs&gt;
+
+&lt;/stage&gt;
+
+
+Listing 10-4GoCD Configuration for Distributing in, and Deploying to, the Production Environment
+
+
+</pre>
+<p>这里唯一真正的新闻是第二行</p>
+<pre>&lt;approval type="manual" /&gt;
+
+</pre>
+<p class="Para" id="Par24">这使得 GoCD 只有在有人单击 web 界面中的批准箭头时才进行到这个阶段。</p>
+<p class="Para" id="Par25">您还必须用您的一台或多台服务器的列表填写名为<code>production</code>的清单文件。</p>
+
+<h2 class="Heading">10.5 成就解锁:基本连续交付</h2>
+<p>简而言之，管道</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par27">由源代码中的提交自动触发</p></li>
+<li><p class="Para" id="Par28">从每次提交自动构建 Debian 包</p></li>
+<li><p class="Para" id="Par29">将其上传到测试环境的存储库中</p></li>
+<li><p class="Para" id="Par30">自动将其安装在测试环境中</p></li>
+<li><p class="Para" id="Par31">在手动批准后，将其上传到生产环境的存储库中</p></li>
+<li><p class="Para" id="Par32">在生产中自动安装新版本</p></li>
+</ul>
+
+<p class="Para" id="Par33">从源代码中的 Git 提交到生产环境中运行的软件的自动化部署的基本框架已经就绪。</p>
+
+
+</body>
+</html>

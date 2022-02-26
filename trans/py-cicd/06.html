@@ -1,0 +1,239 @@
+<html lang="en">
+<head><title>Distributing Debian Packages</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">6.分发 Debian 软件包</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">一旦 Debian 软件包被构建，它必须被分发到将要安装它的服务器上。Debian，以及基本上所有其他的操作系统，都使用拉模型。包及其元数据存储在服务器上，客户端可以与服务器通信并请求元数据和包。</p>
+<p class="Para" id="Par3">元数据和包的总和被称为一个<em class="EmphasisTypeItalic ">库</em>。为了将包分发到需要它们的服务器，我们必须建立和维护这样一个存储库。</p>
+<h2 class="Heading">6.1 签名</h2>
+<p class="Para" id="Par4">在 Debian 领域，包是加密签名的，以确保它们不会在存储服务器上或传输过程中被篡改。因此，第一步是创建一个密钥对，用于对这个特定的存储库进行签名。(如果您已经有了用于签名包的 PGP 密钥，可以跳过这一步。)</p>
+<p class="Para" id="Par5">下面假设您正在与一个没有 GnuPG 密匙环的原始系统用户一起工作，这个密匙环将用于维护 Debian 仓库。它还假设您已经在版本 2 或更高版本中安装了<code>gnupg</code>包。</p>
+<p>首先，创建一个名为<code>key-control-file-gpg2</code>的文件，内容如下:</p>
+<pre>%no-protection
+Key-Type: RSA
+Key-Length: 1024
+Subkey-Type: RSA
+Name-Real: Aptly Signing Key
+Name-Email: nobody@example.com
+Expire-Date: 0
+%commit
+%echo done
+
+</pre>
+<p>用您自己的电子邮件地址或您所从事项目的电子邮件地址替换 nobody@example.com，然后运行以下命令:</p>
+<pre>$ gpg --gen-key --batch key-control-file-gpg2
+
+</pre>
+<p>该命令的输出包含如下所示的一行:</p>
+<pre>gpg: key D163C61A6C25A6B7 marked as ultimately trusted
+
+</pre>
+<p>十六进制数字串<code>D163C...</code>是密钥 ID，每次运行都不同。用它来导出公钥，我们稍后会用到它。</p>
+<pre>$ gpg --export --armor D163C61A6C25A6B7 &gt; pubkey.asc
+
+</pre>
+
+<h2 class="Heading">6.2 准备存储库</h2>
+<p class="Para" id="Par10">我恰当地使用了<a href="https://www.aptly.info/"/><sup><a epub:type="noteref" href="#Fn1" id="Fn1_source">1</a></sup>来创建和管理存储库。它是一个没有服务器组件的命令行应用程序。</p>
+<p>要初始化一个存储库，我首先必须想出一个名字。在这里，我称之为<code>myrepo</code>。</p>
+<pre>$ aptly repo create -distribution=stretch \
+     -architectures=amd64,i386,all -component=main myrepo
+
+Local repo [myrepo] successfully added.
+You can run 'aptly repo add myrepo ...' to add packages
+to repository.
+
+$ aptly publish repo -architectures=amd64,i386,all myrepo
+Warning: publishing from empty source, architectures list
+should be complete, it can't be changed after publishing
+(use -architectures flag)
+Loading packages...
+Generating metadata files and linking package files...
+Finalizing metadata files...
+Signing file 'Release' with gpg, please enter your
+passphrase when prompted:
+Clearsigning file 'Release' with gpg, please enter your
+passphrase when prompted:
+
+Local repo myrepo has been successfully published.
+Please set up your webserver to serve directory
+'/home/aptly/.aptly/public' with autoindexing.
+Now you can add following line to apt sources:
+  deb http://your-server/ stretch main
+Don't forget to add your GPG key to apt with apt-key.
+
+You can also use `aptly serve` to publish your repositories over HTTP quickly.
+
+</pre>
+<p>现在已经创建了存储库，您可以通过运行</p>
+<pre>$ aptly repo add myrepo python_webcount_0.1-1_all.deb
+$ aptly publish update myrepo
+
+</pre>
+<p class="Para" id="Par14">这将把<code>.aptly/public</code>中的文件更新为一个有效的 Debian 仓库，其中包含了新添加的包。</p>
+
+<h2 class="Heading">6.3 自动创建存储库和添加包</h2>
+<p class="Para" id="Par15">为了在部署管道中使用，使用一个命令创建存储库以及向这些存储库中添加包是很方便的。为不同的环境建立单独的存储库也是有意义的。因此，我们需要为测试、试运行和生产环境各准备一个存储库。第二个维度是为其构建包的发行版。</p>
+<p>下面是一个小程序(清单<a href="#PC7"> 6-1 </a>)，给定一个环境、一个发行版和一个 Debian 包的文件名列表，在路径<code>$HOME/aptly/$environment/$distribution</code>中创建存储库，添加包，然后更新存储库的公共文件:</p>
+<pre>
+#!/usr/bin/env python3
+
+
+import json
+
+
+import os
+
+
+import os.path
+
+
+import subprocess
+
+
+import sys
+
+
+assert len(sys.argv) &gt;= 4, \
+    'Usage: add-package &lt;env&gt; &lt;distribution&gt; &lt;.deb-file&gt;+'
+
+env, distribution = sys.argv[1:3]
+packages = sys.argv[3:]
+
+base_path = os.path.expanduser('~') + '/aptly'
+repo_path = '/'.join((base_path, env, distribution))
+config_file = '{}/{}-{}.conf'.format(base_path, env,
+                                     distribution)
+
+def run_aptly(*args):
+    aptly_cmd = ['aptly', '-config=' + config_file]
+    subprocess.call(aptly_cmd + list(args))
+
+def init_config():
+    os.makedirs(base_path, exist_ok=True)
+    contents = {
+        'rootDir': repo_path,
+        'architectures': ['amd64', 'all'],
+    }
+    with open(config_file, 'w') as conf:
+        json.dump(contents, conf)
+
+def init_repo():
+    if os.path.exists(repo_path + '/db'):
+        return
+    os.makedirs(repo_path, exist_ok=True)
+    run_aptly('repo', 'create',
+        '-distribution=' + distribution, 'myrepo')
+    run_aptly('publish', 'repo', 'myrepo')
+
+def add_packages():
+    for pkg in packages:
+        run_aptly('repo', 'add', 'myrepo', pkg)
+
+
+
+    run_aptly('publish', 'update', distribution)
+
+if __name__ == '__main__':
+    init_config();
+    init_repo();
+    add_packages();
+
+Listing 6-1add-package, a Tool for Creating and Populating Debian Repositories
+
+
+</pre>
+<p>它可以用作</p>
+<pre>$ ./add-package testing stretch python-matheval_0.1-1_all.deb
+
+</pre>
+<p class="Para" id="Par18">将<code>python-matheval_0.1-1_all.deb</code>文件添加到环境测试的扩展存储库中，如果存储库尚不存在，它会自动创建该存储库。</p>
+
+<h2 class="Heading">6.4 为存储库提供服务</h2>
+<p class="Para" id="Par19">事实上，这些存储库只能在一台机器上使用。使它们对更多机器可用的最简单的方法是通过 HTTP 将公共目录作为静态文件提供。</p>
+<p>如果您使用 Apache 作为 web 服务器，那么为这些文件提供服务的虚拟主机配置可能如清单<a href="#PC9"> 6-2 </a>所示。</p>
+<pre>ServerName apt.example.com
+ServerAdmin moritz@example.com
+
+DocumentRoot /home/aptly/aptly/
+Alias /debian/testing/stretch/     \
+    /home/aptly/aptly/testing/stretch/public/
+Alias /debian/production/stretch/  \
+    /home/aptly/aptly/production/stretch/public/
+# more repositories go here
+
+Options +Indexes +FollowSymLinks
+Require all granted
+
+LogLevel notice
+CustomLog /var/log/apache2/apt/access.log combined
+ErrorLog /var/log/apache2/apt/error.log
+ServerSignature On
+
+Listing 6-2Apache 2 Configuration for Serving Debian Repositories
+
+
+</pre>
+<p class="Para" id="Par21">在创建日志目录(<code>mkdir -p /var/log/apache2/apt/</code>)、启用虚拟主机(<code>a2ensite apt.conf</code>)并重启 Apache 之后，Debian 仓库就准备好了。</p>
+<p>相反，如果您更喜欢使用<a href="http://www.lighttpd.net/"> lighttpd </a>、<sup>T3】2T5】，您可以使用清单<a href="#PC10"> 6-3 </a>中的配置片段。</sup></p><pre>dir-listing.encoding = "utf-8"
+server.dir-listing = "enable"
+alias.url = (
+    "/debian/testing/stretch/"    =&gt;
+        "/home/aptly/aptly/testing/stretch/public/",
+    "/debian/production/stretch/" =&gt;
+        "/home/aptly/aptly/production/stretch/public/",
+    # more repositories go here
+)
+
+Listing 6-3lighttpd Configuration for Serving Debian Repositories
+
+
+</pre>
+
+<h3 class="Heading">配置计算机以使用存储库</h3>
+<p class="Para" id="Par24">当机器使用一个新的存储库时，它首先必须信任用来签署存储库的密钥。</p>
+<p>将 PGP 公钥(<code>pubkey.asc</code>)复制到将使用该存储库的机器上，并导入它。</p>
+<pre>$ apt-key add pubkey.asc
+
+</pre>
+<p>然后添加实际的包源。</p>
+<pre>$ echo "deb http://apt.example.com/ stretch main" \
+    &gt; /etc/apt/source.list.d/myrepo.list
+
+</pre>
+<p>在一个<code>apt-get update</code>之后，存储库的内容是可用的，并且一个<code>apt-cache policy python-matheval</code>将存储库显示为这个包的一个可能的源。</p>
+<pre>$ apt-cache policy python-webcount
+python-webcount:
+  Installed: (none)
+  Candidate: 0.1-1
+  Version table:
+*** 0.1-1 0
+      990 http://apt.example.com/ stretch/main amd64 Packages
+      100 /var/lib/dpkg/status
+
+</pre>
+<p class="Para" id="Par28">Debian 仓库管理的旋风之旅到此结束，包分发也结束了。</p>
+
+
+<h2 class="Heading">6.5 总结</h2>
+<p class="Para" id="Par29">来自 APT 软件套件的 Debian 软件包安装程序，如<code>apt-get</code>和<code>aptitude</code>读取元数据并从存储库中下载软件包。像这样的软件可以很好地管理这些存储库。</p>
+<p class="Para" id="Par30">加密签名对软件包进行认证，并捕捉修改软件包的中间人攻击和传输错误。您必须创建一个 GPG 密钥，并适当地提供它，并将目标机器配置为信任此密钥。</p>
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par11"><a href="http://www.aptly.info/"> <code>www.aptly.info/</code> </a>。</p>
+
+ 
+
+<a href="#Fn2_source">2</a><p class="Para" id="Par23"><a href="http://www.lighttpd.net/"> <code>www.lighttpd.net/</code> </a>。</p>
+
+ 
+
+</aside>
+
+</body>
+</html>

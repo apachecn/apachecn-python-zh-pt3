@@ -1,0 +1,84 @@
+<html lang="en">
+<head><title>Conclusions and Outlook</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">14.结论和展望</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">读完这本书后，你应该对如何以及为什么为一个 Python 项目实现持续集成(CI)和持续交付(CD)有一个坚实的理解。这不是一个小任务，但是许多例子应该可以让您很快开始，甚至只有某些方面的实现也可以给您带来好处。在一个协作的环境中，展示这些好处更容易让其他人相信，在工具链和过程改进上花费时间是值得的。</p>
+<h2 class="Heading">14.1 接下来是什么？</h2>
+<p class="Para" id="Par3">在这最后一章中，让我们看看一些概念，它们可以帮助你发展一个更成熟的软件开发过程，并与 CI 和 CD 相结合。</p>
+<h3 class="Heading">提高质量保证</h3>
+<p class="Para" id="Par4">提高软件质量就像增加应用程序的单元测试覆盖率一样简单。然而，并不是所有的错误都可以通过这种方式捕获，例如，性能退化或您以前没有想到的错误。</p>
+<p class="Para" id="Par5">为了捕捉性能回归，您可以创建一个单独的性能测试环境，并在该环境中运行一组预定义的负载和性能测试。您可以将此作为另一个阶段添加到部署管道中。</p>
+<p class="Para" id="Par6">处理意想不到的案件更难，因为，根据定义，他们会出其不意地抓住你。对于某些类型的应用程序，自动模糊化可以找到导致应用程序崩溃的输入，并将这些输入作为示例提供给开发人员。</p>
+<p class="Para" id="Par7">有一些架构方法可以使您的应用程序对意外的用户输入和错误场景更加健壮，但是从工具的角度来看，您能做的最好的事情就是使应用程序对这种错误的反应更加健壮。</p>
+<p class="Para" id="Par8">专门的错误跟踪器可以帮助您识别这样的错误。它们让开发人员更深入地了解如何重现和诊断这些错误。例如，<a href="https://getsentry.com/welcome/"> Sentry </a> <sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source"> 1 </a> </sup>是一款开源的集中式错误跟踪器，提供托管解决方案。</p>
+
+<h3 class="Heading">韵律学</h3>
+<p class="Para" id="Par10">在更大的系统和组织中，收集和聚合指标是保持系统可管理性的一个要求。甚至出现了将监测建立在时间序列数据基础上的趋势。</p>
+<p class="Para" id="Par11">在部署系统的上下文中，您可以收集的一些数据点包括每个阶段或任务的开始日期和持续时间、它构建的版本以及该特定版本的特征，包括性能数据、使用数据(如参与率)、生成的工件的大小、发现的缺陷和漏洞等等。</p>
+<p class="Para" id="Par12">理解收集到的数据并不总是容易的，关于这方面的书籍已经有很多了。尽管如此，建立一种收集各种指标的方法并创建有助于解释它们的仪表板是一个好主意。</p>
+
+<h3 class="Heading">基础设施自动化</h3>
+<p class="Para" id="Par13">配置管理对于扩展基础设施至关重要，但是像 Ansible 这样的工具不足以满足所有的需求和规模。</p>
+<h4 class="Heading">数据库中的配置、机密管理</h4>
+<p class="Para" id="Par14">随着配置数据量的增长，将其保存在纯文本文件中变得不切实际。因此，您必须维护一个配置数据库，并使用<a href="http://docs.ansible.com/ansible/developing_inventory.html"> Ansible 的<em class="EmphasisTypeItalic ">动态库存</em>机制</a> <sup> <a epub:type="noteref" href="#Fn2" id="Fn2_source"> 2 </a> </sup>将数据传播到配置管理系统中。</p>
+<p class="Para" id="Par16">然而，在数据库中存储密码、私钥和其他秘密总是一件棘手的事情。你需要在数据库上安装一个应用程序，以避免将这些秘密泄露给不应该访问它们的用户。</p>
+<p class="Para" id="Par17">这样的应用已经存在。专用的秘密管理系统以加密的形式存储秘密，并小心地控制对它们的访问。这类应用的例子有 Square 的<a href="https://square.github.io/keywhiz/"> Keywhiz </a>、<sup>T3、T3、</sup>，或者《流浪者》的作者 HashiCorp 的<a href="https://www.hashicorp.com/blog/vault.html"> Vault </a>、<sup> <a epub:type="noteref" href="#Fn4" id="Fn4_source"> 4 </a> </sup>。</p>
+<p class="Para" id="Par20">秘密管理系统通常提供插件来创建服务帐户，如 MySQL 或 PostgreSQL 数据库帐户，并在无人参与的情况下轮换其密码。至关重要的是，这也意味着没有人会看到随机生成的密码。</p>
+<p class="Para" id="Par21">除了将应用程序配置推送到运行应用程序的机器或容器中，您还可以构建您的应用程序来从中央位置获取配置。这样的中心位置通常被称为<em class="EmphasisTypeItalic ">服务发现</em>系统。CoreOS 项目的<a href="https://github.com/coreos/etcd"> etcd </a>、<sup>T5】5</sup>和 HashiCorp 的<a href="https://www.consul.io/">consult</a>、<sup> <a epub:type="noteref" href="#Fn6" id="Fn6_source"> 6 </a> </sup>等工具，让管理大量配置变得更加容易。它们还提供了额外的特性，比如对服务的基本监控，以及只向消费者公开服务端点的工作实例。</p>
+<p class="Para" id="Par24">举例来说，考虑一个需要大量配置数据的应用程序可以只被提供一个秘密密钥，用于针对服务发现系统的认证以及关于它在哪个环境中运行的信息。然后，应用程序从中央服务中读取所有其他配置。如果应用程序需要访问存储服务，并且有多个实例可以提供该服务，则监控服务会确保应用程序获得一个工作实例的地址。</p>
+<p class="Para" id="Par25">这种服务发现方法允许一种称为<em class="EmphasisTypeItalic ">不可变基础设施</em>的模式。这意味着您只需构建一个容器(比如 Docker 容器，甚至是一个虚拟机映像)，然后，您就可以通过各种测试环境传播整个容器，而不是只传播您的应用程序。集群管理系统提供连接到服务发现系统的凭证；否则，容器保持不变。</p>
+
+<h4 class="Heading">基础设施作为代码</h4>
+<p class="Para" id="Par26">如前几章所述，传统的 CD 系统通常局限于源代码控制系统中的一个分支，因为只有一个用于部署代码的测试环境。</p>
+<p class="Para" id="Par27">云基础设施改变了游戏规则。它允许对整个环境的声明性描述，包括几个数据库、服务和虚拟服务器。实例化一个新环境就变成了执行一个命令的事情，允许您将每个分支部署到一个新的、独立的环境中。</p>
+<p class="Para" id="Par28">创造新环境的主要工具有<a href="https://www.terraform.io/">地形</a> <sup> <a epub:type="noteref" href="#Fn7" id="Fn7_source"> 7 </a> </sup>和<a href="https://aws.amazon.com/cloudformation/">云形成</a>。<sup> <a epub:type="noteref" href="#Fn8" id="Fn8_source"> 8 </a> </sup></p>
+
+
+
+<h2 class="Heading">14.2 结论</h2>
+<p class="Para" id="Par31">自动化部署使软件开发和操作更加高效和愉快。我已经向您展示了对它的温和而实用的介绍，反过来，使您能够向您的组织介绍 CD。</p>
+<p class="Para" id="Par32">对于一个开发软件的组织来说，这是一个很大的进步，但它也是自动化基础设施的一小部分，是通往高效且有弹性的软件开发过程的一小部分。</p>
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par9"><a href="https://getsentry.com/welcome/"> <code>https://getsentry.com/welcome/</code> </a>。</p>
+
+ 
+
+<a href="#Fn2_source">2</a><p class="Para" id="Par15"><a href="http://docs.ansible.com/ansible/developing_inventory.html"> <code>http://docs.ansible.com/ansible/developing_inventory.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn3_source">3</a><p class="Para" id="Par18"><a href="https://square.github.io/keywhiz/"> <code>https://square.github.io/keywhiz/</code> </a>。</p>
+
+ 
+
+<a href="#Fn4_source">4</a><p class="Para" id="Par19"><a href="http://www.hashicorp.com/blog/vault.html"> <code>www.hashicorp.com/blog/vault.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn5_source">5</a><p class="Para" id="Par22"><a href="https://github.com/coreos/etcd"> <code>https://github.com/coreos/etcd</code> </a>。</p>
+
+ 
+
+<a href="#Fn6_source">6</a><p class="Para" id="Par23"><a href="http://www.consul.io/"> <code>www.consul.io/</code> </a>。</p>
+
+ 
+
+<a href="#Fn7_source">7</a><p class="Para" id="Par29"><a href="http://www.terraform.io/"> <code>www.terraform.io/</code> </a>。</p>
+
+ 
+
+<a href="#Fn8_source">8</a><p class="Para" id="Par30"><a href="https://aws.amazon.com/cloudformation/"> <code>https://aws.amazon.com/cloudformation/</code> </a>。</p>
+
+ 
+
+</aside>
+
+</body>
+</html>

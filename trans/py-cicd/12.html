@@ -1,0 +1,53 @@
+<html lang="en">
+<head><title>Security</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">12.安全性</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">自动化部署对您的应用程序和基础架构的安全性有什么影响？事实证明，这既有安全优势，也有需要警惕的事情。</p>
+<h2 class="Heading">12.1 集权的危险</h2>
+<p class="Para" id="Par3">在部署管道中，控制部署的机器必须能够访问部署软件的目标机器。在最简单的情况下，部署机器上有一个私有的 SSH 密钥，目标机器将访问权授予该密钥的所有者。</p>
+<p class="Para" id="Par4">这是一个明显的风险，因为获得部署机器(GoCD 代理或控制代理的 GoCD 服务器)访问权限的攻击者可以使用这个密钥连接到所有目标机器，从而获得对它们的完全控制。</p>
+<p>一些可能的缓解措施包括:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par6">实现部署机器的强化设置(例如，使用 SELinux 或 grsecurity)。</p></li>
+<li><p class="Para" id="Par7">用密码保护 SSH 密钥，并通过触发部署的同一通道提供密码，比如通过 GoCD 服务器中的加密变量。</p></li>
+<li><p class="Para" id="Par8">使用硬件令牌来存储 SSH 部署密钥。硬件令牌对于基于软件的密钥提取是安全的。</p></li>
+<li><p class="Para" id="Par9">拥有单独的部署和构建主机。构建主机往往需要安装更多的软件，这暴露了更大的攻击面。</p></li>
+<li><p class="Para" id="Par10">您还可以为每个环境配备单独的部署机器，并使用单独的凭证。</p></li>
+<li><p class="Para" id="Par11">在目标机器上，通过上述 SSH 密钥只允许非特权访问，并使用类似于<code>sudo</code>的东西，只允许某些特权操作。</p></li>
+</ul>
+
+<p class="Para" id="Par12">每种缓解措施都有自己的成本和缺点。为了说明这一点，请注意，如果攻击者仅设法获得文件系统的副本，那么密码保护的 SSH 密钥会有所帮助，但如果攻击者获得机器上的 root 权限，从而可以获得包含解密的 SSH 密钥的内存转储，那么就没有帮助了。</p>
+<p class="Para" id="Par13">基于硬件的秘密存储可以很好地防止密钥被盗，但是它使得虚拟系统的使用更加困难，并且必须购买和配置。</p>
+<p class="Para" id="Par14"><code>sudo</code>方法在限制攻击传播方面非常有效，但是它需要在目标机器上进行大量的配置，并且您需要一种安全的方式来部署它。所以，你遇到了一个鸡和蛋的问题，需要付出额外的努力。</p>
+<p class="Para" id="Par15">另一方面，如果您没有交付管道，部署必须手动进行。所以，现在你有同样的问题，必须让人类访问目标机器。大多数组织都提供某种安全的机器来存储操作员的 SSH 密钥，并且您面临着与部署机器相同的风险。</p>
+
+<h2 class="Heading">12.2 安全修复上市时间</h2>
+<p class="Para" id="Par16">与手动部署相比，即使相对较慢的部署管道仍然非常快。当发现漏洞时，这种快速且自动化的部署过程可以大大缩短部署修补程序的时间。</p>
+<p class="Para" id="Par17">同样重要的是，笨拙的手动发布过程诱使操作人员绕过安全修复走捷径，从而跳过了质量保证过程的一些步骤。当这个过程自动化且快速时，坚持这个过程比跳过它更容易，所以即使在有压力的情况下，它实际上也会被执行。</p>
+
+<h2 class="Heading">12.3 审计和软件材料清单</h2>
+<p class="Para" id="Par18">一个好的部署管道跟踪软件包的哪个版本是在什么时候构建和部署的。这允许人们回答诸如“我们的这个安全漏洞有多长时间了？”，“报告问题后多久在生产中修补了漏洞？”，甚至可能是“谁批准了引入漏洞的变更？”</p>
+<p class="Para" id="Par19">如果您还使用基于存储在版本控制系统中的文件的配置管理，那么您甚至可以针对配置来回答这些问题，而不仅仅是针对软件版本。</p>
+<p class="Para" id="Par20">简而言之，部署管道为审计提供了足够的数据。</p>
+<p class="Para" id="Par21">一些法规要求您在某些情况下记录<a href="https://en.wikipedia.org/wiki/Software_Bill_of_Materials">软件物料清单</a> <sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source"> 1 </a> </sup>，例如，对于医疗设备软件。这是软件中包含的组件的记录，例如库及其版本的列表。虽然这对于评估许可证违规的影响很重要，但对于找出特定版本的库中哪些应用程序受到漏洞的影响也很重要。</p>
+<p class="Para" id="Par23">惠普安全部门 2015 年的一份报告发现，44%的被调查漏洞可能是由至少两年前已知(并可能已修补)的漏洞造成的。这反过来意味着，通过跟踪您在何处使用哪个软件版本、订阅已知漏洞的新闻简报或订阅源，以及定期使用修补版本重建和重新部署您的软件，您可以将安全风险减半。</p>
+<p class="Para" id="Par25">连续交付系统不会自动为您创建这样的软件物料清单，但它会为您提供一个可以插入这样的系统的地方。</p>
+
+<h2 class="Heading">12.4 摘要</h2>
+<p class="Para" id="Par26">连续交付提供了对新发现的漏洞做出快速且可预测的反应的能力。同时，部署管道本身也是一个攻击面，如果没有适当的保护，它可能会成为入侵者的诱人目标。</p>
+<p class="Para" id="Par27">最后，部署管道可以帮助您收集数据，这些数据可以提供对具有已知漏洞的软件的使用的洞察，从而使您在修补这些安全漏洞时能够彻底。</p>
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par22">维基百科，《软件物料清单》，<a href="https://en.wikipedia.org/wiki/Software_bill_of_materials"> <code>https://en.wikipedia.org/wiki/Software_bill_of_materials</code> </a>，2018。</p>
+
+ 
+
+</aside>
+
+</body>
+</html>

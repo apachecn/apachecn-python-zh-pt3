@@ -1,0 +1,266 @@
+<html lang="en">
+<head><title>Pipeline Improvements</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">11.管道改进</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">前一章中的管道已经非常有用，并且比手工构建、分发和安装更好。尽管如此，仍有改进的余地。我将讨论如何将它更改为总是部署在同一管道实例中构建的确切版本，如何在安装后运行冒烟测试，以及如何从 Go continuous delivery (GoCD)配置中提取模板，以便它变得易于重用。</p>
+<h2 class="Heading">11.1 回滚和安装特定版本</h2>
+<p class="Para" id="Par3">在前几章中开发的部署管道总是安装最新版本的包。因为构建版本号的逻辑通常会产生单调递增的版本号，所以这通常是以前在同一个管道实例中构建的包。</p>
+<p class="Para" id="Par4">然而，我们真的希望管道部署在管道的同一个实例中构建的确切版本。明显的好处是，它允许您重新运行旧版本的管道，安装旧版本，有效地让您回滚。</p>
+<p class="Para" id="Par5">或者，您可以为修补程序构建第二个管道，基于同一个 Git 存储库但不同的分支。当您需要修补程序时，您只需暂停常规管道并触发修补程序管道。在这种情况下，如果您总是安装最新版本，为修补程序找到合适的版本字符串几乎是不可能的，因为它必须高于当前安装的版本，但也低于下一个常规版本。哦，请全部自动完成。</p>
+<p class="Para" id="Par6">安装特定版本的一个不太明显的好处是，它可以检测目标机器的包源代码配置中的错误。如果部署脚本只安装可用的最新版本，并且由于错误没有在目标机器上配置存储库，那么安装过程将变成一个无声的无操作，如果软件包已经安装在一个旧版本中的话。</p>
+<h3 class="Heading">履行</h3>
+<p>要做两件事:弄清楚要安装哪个版本的包，然后去做。如何用 Ansible 安装一个特定版本的包(清单<a href="#PC1"> 11-1 </a>)已经在第<a href="07.html"> 7 </a>章解释过了。</p>
+<pre>- apt: name=foo=1.00 state=present force=yes
+
+Listing 11-1Ansible Playbook Fragment for Installing Version 1.00 of Package foo
+
+
+
+
+</pre>
+<p>更通用的方法是使用同一章中介绍的角色<code>custom_package_installation</code>。</p>
+<pre>- hosts: web roles:
+  role: custom_package_installation
+  package: python-matheval
+
+</pre>
+<p class="Para" id="Par9">您可以用<code>ansible-playbook --extra-vars=package_version=1.00...</code>调用它。</p>
+<p class="Para" id="Par10">将这个剧本作为文件<code>ansible/deploy-python-matheval.yml</code>添加到<code>deployment-utils</code> Git 存储库中。找到要安装的版本号也有一个简单但可能不明显的解决方案:将版本号写入文件；将此文件作为工件收集到 GoCD 中；然后，当需要安装时，获取工件并从中读取版本号。在撰写本文时，GoCD 没有更直接的方法通过管道传播元数据。</p>
+<p>将版本传递给 Ansible playbook 的 GoCD 配置如清单<a href="#PC3"> 11-2 </a>所示。</p>
+<pre>&lt;job name="deploy-testing"&gt;
+  &lt;tasks&gt;
+    &lt;fetchartifact pipeline="" stage="build" job="build-deb" srcfile="version" artifactOrigin="gocd" /&gt;
+    &lt;exec command="/bin/bash" workingdir="deployment-utils/ansible/"&gt;
+      &lt;arg&gt;-c&lt;/arg&gt;
+      &lt;arg&gt;ansible-playbook --inventory-file=testing
+--extra-vars="package_version=$(&amp;lt; ../../version)" deploy-python-matheval.yml&lt;/arg&gt;
+    &lt;/exec&gt;
+  &lt;/tasks&gt;
+
+&lt;/job&gt;
+
+
+Listing 11-2GoCD Configuration for Installing the Version from the version File
+
+
+
+
+</pre>
+<p class="Para" id="Par12">(<code>&lt;arg&gt;...&lt;/arg&gt;</code> XML 标签必须在一行上，这样 Bash 会将其解释为一个命令。此处多行显示只是为了可读性。)</p>
+<p class="Para" id="Par13">Bash 的<code>$(...)</code>打开一个子进程，这也是一个 Bash 进程，并将该子进程的输出插入命令行。<code>&lt; ../../version</code>是读取文件的一种简单方式，这是 XML，需要对小于号进行转义。</p>
+<p class="Para" id="Par14">生产部署配置看起来非常相似，只是使用了<code>--inventory-file=production</code>。</p>
+
+<h3 class="Heading">试试看！</h3>
+<p class="Para" id="Par15">为了测试特定于版本的包安装，您必须拥有至少两次捕获了<code>version</code>工件的管道运行。如果还没有，可以将提交推送到源存储库，GoCD 会自动获取它们。</p>
+<p class="Para" id="Par16">可以用<code>dpkg -l python-matheval</code>查询目标机器上安装的版本。在最后一次运行之后，应该安装在该管道实例中构建的版本。</p>
+<p>然后，您可以从以前的管道重新运行部署阶段，例如，在管道的历史视图中，将鼠标悬停在阶段上，然后单击上面带有触发重新运行的箭头的圆圈(图<a href="#Fig1"> 11-1 </a>)。</p>
+<p><img alt="../images/456760_1_En_11_Chapter/456760_1_En_11_Fig1_HTML.jpg" src="../images/456760_1_En_11_Chapter/456760_1_En_11_Fig1_HTML.jpg" style="height:20.98em"/></p>
+<p>图 11-1</p><p class="SimplePara">在管道的历史视图中，将鼠标悬停在一个完整的阶段(通过或失败)上会显示一个重新运行该阶段的图标</p>
+
+
+<p class="Para" id="Par18">当 stage 完成运行时，您可以再次检查目标机器上已安装的软件包版本，以验证旧版本确实已经部署。</p>
+
+
+<h2 class="Heading">11.2 在管道中运行冒烟测试</h2>
+<p class="Para" id="Par19">部署应用程序时，测试应用程序的新版本是否能正常工作是非常重要的。通常，这是通过冒烟测试来完成的——这是一个非常简单的测试，但它测试了应用程序的许多方面:应用程序进程运行，它绑定到它应该绑定的端口，以及它可以响应请求。通常，这意味着配置和数据库连接也是相同的。</p>
+<h3 class="Heading">什么时候抽烟？</h3>
+<p class="Para" id="Par20">烟尘测试一次覆盖很多领域。一个单独的测试可能需要一个正常工作的网络、正确配置的防火墙、web 服务器、应用服务器、数据库等等。这是一个优点，因为这意味着它可以检测许多种类的错误，但这也是一个缺点，因为这意味着诊断能力较低。当它出现故障时，您不知道是哪个组件的问题，必须重新调查每个故障。</p>
+<p class="Para" id="Par21">冒烟测试也比单元测试贵得多。它们往往需要更多的时间来编写，需要更长的时间来执行，并且在面对配置或数据更改时更加脆弱。因此，典型的建议是进行少量的冒烟测试，可能是 1 到 20 次，或者可能是 1%的单元测试。</p>
+<p class="Para" id="Par22">举个例子，如果你要为 Web 开发一个航班搜索和推荐引擎，你的单元测试将覆盖用户可能遇到的不同场景，并且引擎会产生最好的建议。在冒烟测试中，你只需检查你是否能输入旅行的起点、目的地和日期，以及你是否能得到一个飞行建议列表。如果该网站上有一个成员资格区域，您将测试没有凭据无法访问该区域，并且可以在登录后访问该区域。三次烟雾测试，差不多吧。</p>
+
+<h3 class="Heading">白盒烟雾测试</h3>
+<p class="Para" id="Par23">上面提到的例子基本上是黑盒冒烟测试，因为它们不关心应用程序的内部，并且像用户一样对待应用程序。这是非常有价值的，因为归根结底，你关心用户的体验。</p>
+<p class="Para" id="Par24">有时，应用程序的某些方面不容易进行冒烟测试，但经常出现故障，足以保证自动冒烟测试。例如，应用程序可能会缓存来自外部服务的响应，因此简单地使用某个功能并不能保证能够使用这个特定的通信通道。</p>
+<p class="Para" id="Par25">一个实用的解决方案是让应用程序提供某种自我诊断，比如应用程序从一个 web 页面测试其自身配置的一致性，检查所有必需的数据库表是否存在，以及外部服务是否可达。然后，单个冒烟测试可以调用状态页，并在状态页不可访问或报告错误时引发错误。这是一个白盒烟雾测试。</p>
+<p class="Para" id="Par26">白盒冒烟测试的状态页面可以在监控检查中重用，但是在部署过程中显式检查它们仍然是一个好主意。白盒烟雾测试不应该取代黑盒烟雾测试，而是对其进行补充。</p>
+
+<h3 class="Heading">样本黑盒烟雾测试</h3>
+<p><code>python-matheval</code>应用程序提供了一个简单的 HTTP 端点，因此任何 HTTP 客户端都可以进行冒烟测试。使用<code>curl</code>命令行 HTTP 客户端，请求可能如下所示:</p>
+<pre>$ curl --silent -H "Accept: application/json" \
+       --data '["+", 37, 5]' \
+       -XPOST http://127.0.0.1:8800/
+42
+
+</pre>
+<p>检查输出是否符合预期的一个简单方法是通过<code>grep</code>将它传送出去。</p>
+<pre>$ curl --silent -H "Accept: application/json" \
+       --data '["+", 37, 5]' \
+       -XPOST http://127.0.0.1:8800/ | grep ^42$
+42
+
+</pre>
+<p class="Para" id="Par29">输出与之前相同，但是如果输出偏离预期，退出状态是非零的。</p>
+
+<h3 class="Heading">在管道和滚动发布中增加烟雾测试</h3>
+<p class="Para" id="Par30">一个简单的在交付管道中集成冒烟测试的方法是在每个部署阶段之后添加一个冒烟测试阶段(也就是说，一个在测试部署之后，一个在生产部署之后)。如果应用程序的某个版本在测试环境中未通过冒烟测试，此设置会阻止该版本进入生产环境。因为冒烟测试只是一个 shell 命令，它以非零退出状态指示失败，所以将它作为命令添加到您的部署系统中是微不足道的。</p>
+<p class="Para" id="Par31">如果您的应用程序只有一个实例在运行，这是您能做的最好的事情。但是，如果您有一个机器群，并且有几个应用程序实例在某种负载平衡器后面运行，则可以在升级期间单独对每个实例进行冒烟测试，如果太多实例未通过冒烟测试，则可以中止升级。</p>
+<p class="Para" id="Par32">所有成功的大型科技公司都通过检查来保护他们的生产系统，甚至更精细的版本。</p>
+<p>这种滚动升级的一个简单方法是为每个包的部署扩展 Ansible playbook，并让它在移动到下一台机器之前运行每台机器的冒烟测试(清单<a href="#PC6"> 11-3 </a>和<a href="#PC7"> 11-4 </a>)。</p>
+<pre>
+---
+
+- hosts: web
+  serial: 1
+  max_fail_percentage: 1
+  tasks:
+    - apt:
+        update_cache: yes
+        package: python-matheval={{package_version}}
+        state: present
+        force: yes
+    - local_action: &gt;
+        command ../smoke-tests/python-matheval
+        "{{ansible_host}}"
+      changed_when: False
+
+Listing 11-4File ansible/deploy-python-matheval.yml: A Rolling Deployment Playbook with Integrated Smoke Test
+
+
+</pre>
+<pre>
+#!/bin/bash
+
+curl  --silent -H "Accept: application/json" \
+      --data '["+", 37, 5]' –XPOST  http://$1:8800/ \
+      | grep ^42$
+
+Listing 11-3File smoke-tests/python-matheval: A Simple HTTP-Based Smoke Test
+
+
+</pre>
+<p class="Para" id="Par34">随着冒烟测试的数量随着时间的推移而增长，将它们全部塞进 Ansible playbook 是不现实的，这样做还会限制可重用性。在这里，它们位于<a href="https://github.com/python-ci-cd/deployment-utils">部署工具库</a>的一个单独文件中。<sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source"> 1 </a> </sup>另一个选择是从冒烟测试中构建一个包，并将它们安装在运行 Ansible 的机器上。</p>
+<p class="Para" id="Par36">虽然在安装了该服务的机器上执行 smoke tests 命令很容易，但作为本地操作(即在启动 Ansible playbook 的控制主机上)运行它也会测试网络和防火墙部分，从而更真实地模拟实际使用场景。</p>
+
+
+<h2 class="Heading">11.3 配置模板</h2>
+<p class="Para" id="Par37">当您有多个软件包要部署时，您需要为每个软件包构建一个管道。只要部署管道在结构上足够相似——通常使用相同的打包格式和相同的安装技术——您就可以重用该结构，方法是从第一个管道中提取一个<em class="EmphasisTypeItalic ">模板</em>,并对其进行多次实例化，以创建具有相同结构的单独管道。</p>
+<p class="Para" id="Par38">如果您仔细查看之前开发的管道 XML 配置，您可能会注意到它并不是非常特定于<code>python-matheval</code>项目。除了 Debian 发行版和部署手册的名称，这里的所有内容都可以被 Debian 打包的任何软件重用。</p>
+<p>为了使管道更加通用，您可以将<em class="EmphasisTypeItalic ">参数</em>(简称<em class="EmphasisTypeItalic "> params </em>)定义为管道内部的第一件事，在<code>&lt;materials&gt;</code>部分之前(列表<a href="#PC8"> 11-5 </a>)。</p>
+<pre>
+&lt;params&gt;
+
+  &lt;param name="distribution"&gt;stretch&lt;/param&gt;
+  &lt;param name="deployment_playbook"&gt;deploy-python-matheval.yml&lt;/param&gt;
+
+&lt;/params&gt;
+
+
+Listing 11-5Parameter Block for the python-matheval Pipeline, to Be Inserted Before the Materials
+
+
+</pre>
+<p>然后用占位符<code>#{distribution}</code>替换每个阶段定义中所有出现的<code>stretch</code>，用<code>#{deployment_playbook}</code>替换<code>deploy-python-matheval.yml</code>，这样就得到如下 XML 片段</p>
+<pre>&lt;exec command="/bin/bash"&gt;
+  &lt;arg&gt;-c&lt;/arg&gt;
+  &lt;arg&gt;deployment-utils/add-package \
+        testing #{distribution} *.deb&lt;/arg&gt;
+
+&lt;/exec&gt;
+
+
+</pre>
+<p>和</p>
+<pre>&lt;exec command="/bin/bash" workingdir="deployment-utils/ansible/"&gt;
+  &lt;arg&gt;-c&lt;/arg&gt;
+  &lt;arg&gt;ansible-playbook --inventory-file=testing
+      --extra-vars="package_version=$(&amp;lt; ../../version)"
+      #{deployment_playbook}&lt;/arg&gt;
+
+
+
+&lt;/exec&gt;
+
+
+</pre>
+<p class="Para" id="Par42">泛化的下一步是将阶段移动到一个<em class="EmphasisTypeItalic ">模板</em>。这也可以通过编辑 XML 配置来完成，或者在 web 界面中使用管理➤管道，然后单击名为 python-matheval 的管道旁边的提取模板链接来完成。</p>
+<p>如果选择<code>debian-base</code>作为模板名，XML 中的结果看起来如清单<a href="#PC11"> 11-6 </a>所示。</p>
+<pre>&lt;pipelines group="deployment"&gt;
+  &lt;pipeline name="python-matheval" template="debian-base"&gt;
+    &lt;materials&gt;
+      &lt;git url=
+        "https://github.com/python-ci-cd/python-matheval.git"
+        dest="source" materialName="python-matheval" /&gt;
+      &lt;git url=
+        "https://github.com/python-ci-cd/deployment-utils.git"
+        dest="deployment-utils"
+        materialName="deployment-utils" /&gt;
+    &lt;/materials&gt;
+    &lt;params&gt;
+      &lt;param name="distribution"&gt;stretch&lt;/param&gt;
+      &lt;param name="deployment_playbook"&gt;deploy-python-matheval.yml&lt;/param&gt;
+    &lt;/params&gt;
+
+&lt;/pipelines&gt;
+
+
+&lt;templates&gt;
+
+  &lt;pipeline name="debian-base"&gt;
+      &lt;!-- stages definitions go here --&gt;
+  &lt;/pipeline&gt;
+
+&lt;/templates&gt;
+
+
+Listing 11-6GoCD Configuration for Pipeline matheval Using a Template
+
+
+</pre>
+<p class="Para" id="Par44">这个软件包特有的一切现在都在管道定义中，可重用的部分在模板中。唯一的例外是<code>deployment-utils</code>存储库，它必须单独添加到每个管道中，因为 GoCD 无法将材料移动到模板中。</p>
+<p class="Para" id="Par45">为另一个应用程序添加部署管道现在只需要指定 URL、目标(即 Ansible 清单文件中的组名)和分发。在下一章你会看到一个例子。一旦您习惯了工具，这相当于不到五分钟的工作。</p>
+
+<h2 class="Heading">11.4 避免重建踩踏</h2>
+<p class="Para" id="Par46">当您有相当数量的管道时，您会注意到一种不幸的模式。每当您向<code>deployment-utils</code>存储库提交时，都会触发所有管道的重建。这是一种资源浪费，并且会占用一个或多个构建代理，因此基于实际源代码更改的包构建会延迟到所有构建工作完成之后。</p>
+<p>GoCD 的材料有一个<em class="EmphasisTypeItalic ">忽略</em>过滤器，这是为了避免当只有文档发生变化时昂贵的重建(清单<a href="#PC12"> 11-7 </a>)。您可以使用它来忽略对存储库中所有文件的更改，从而避免重建混乱。</p>
+<pre>&lt;git url="https://github.com/python-ci-cd/deployment-utils.git"
+      dest="deployment-utils" materialName="deployment-utils"&gt;
+    &lt;filter&gt;
+        &lt;ignore pattern="*" /&gt;
+        &lt;ignore pattern="**/*" /&gt;
+    &lt;/filter&gt;
+
+&lt;/git&gt;
+
+
+Listing 11-7GoCD Material Definition That Avoids Triggering the Pipeline
+
+
+</pre>
+<p class="Para" id="Par48"><code>*</code>过滤器匹配顶层目录中的所有文件，<code>**/*</code>匹配子目录中的所有文件。</p>
+<p class="Para" id="Par49">当您将所有管道中的<code>deployment-utils</code>材料的材料配置更改为这些忽略过滤器时，对<code>deployment-utils</code>存储库的新提交不会触发任何管道。启动管道时，GoCD 仍然轮询材料并使用最新版本。与所有管线一样，所有阶段的材料版本都是相同的。</p>
+<p>忽略存储库中的所有文件是一种笨拙的工具，需要您手动触发项目的管道，以对部署行动手册进行更改。因此，从 GoCD 版本 16.6 开始，您可以用<code>invertFilter="true"</code>反转过滤条件，以创建白名单(清单<a href="#PC13"> 11-8 </a>)。</p>
+<pre>&lt;git url="https://github.com/python-ci-cd/deployment-utils.git"
+        invertFilter="true" dest="deployment-utils"
+        materialName="deployment-utils"&gt;
+  &lt;filter&gt;
+    &lt;ignore pattern="ansible/deploy-python-matheval.yml" /&gt;
+  &lt;/filter&gt;
+
+/git&gt;
+
+
+Listing 11-8Using White Lists in GoCD Materials to Selectively Trigger on Changes to Certain Files
+
+
+</pre>
+<p class="Para" id="Par51">每个管道的这种白名单配置导致对<code>deployment-utils</code>储存库的提交仅触发与变更相关的管道。</p>
+
+<h2 class="Heading">11.5 摘要</h2>
+<p class="Para" id="Par52">当您将管道配置为部署在管道的同一实例中构建的完全相同的版本时，您可以使用它来安装旧版本或进行回滚。</p>
+<p class="Para" id="Par53">管道模板允许您提取管道之间的共性，并且只维护这些共性一次。参数带来了支持不同软件包所需的多样性。</p>
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par35"><a href="https://github.com/python-ci-cd/deployment-utils"> <code>https://github.com/python-ci-cd/deployment-utils</code> </a>。</p>
+
+ 
+
+</aside>
+
+</body>
+</html>

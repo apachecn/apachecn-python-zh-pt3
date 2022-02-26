@@ -1,0 +1,1257 @@
+<html lang="en">
+<head><title>Using Twisted as a WSGI Server</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">5.使用 Twisted 作为 WSGI 服务器</h1>
+
+ 
+<!--End Abstract--><h2 class="Heading">WSGI 简介</h2>
+<p class="Para" id="Par2">WSGI——Web 标准网关接口——是 Python 标准。它松散地基于 CGI——通用网关接口——标准，web 服务器用来与脚本交互。随着负载的增加，需要在 web 服务器中有一个持久的 Python 进程。最初，每个服务器都有自己独特的运行 Python 应用程序的方式。这意味着每个应用程序都必须在一个 web 服务器上做出决定，并且不能移动。WSGI 是作为用 Python 编写的 web 应用程序的底层标准而设计的，用于与可以在内部运行 Python 的 web 服务器进行交互(要么用 Python 编写，要么嵌入 Python 解释器)。</p>
+<p class="Para" id="Par3">WSGI 标准定义了两者之间的接口:WSGI web <em class="EmphasisTypeItalic ">应用程序</em>和 WSGI web <em class="EmphasisTypeItalic ">服务器</em>。</p>
+<p class="Para" id="Par4">Twisted 有一个 web 服务器，它在实现自己独特的基于 web 的 API 的同时，还实现了 WSGI 标准。因为它实现了 WSGI 标准，所以它可以运行任何支持 WSGI 的 Python web 应用程序。</p>
+<p class="Para" id="Par5">通常，Python web 应用程序不会直接与 WSGI 交互。相反，web 框架——如 Django、Flask 或 Pyramid——负责作为应用程序与 WSGI 接口，并向 web 应用程序提供更高级别的接口。这些接口是特定于 web 框架的——我们并不期望一个应用程序可以很容易地从 Django 移植到 Pyramid。</p>
+<p class="Para" id="Par6">打个比方，把 web 框架的选择想象成类似于编程语言的选择，把 web 服务器的选择想象成类似于操作系统的选择。我们期望在操作系统之间移动将允许我们保持大部分代码的完整性(可移植性),但是我们不期望在转换编程语言时也是如此。</p>
+<p class="Para" id="Par7">从 web 服务器的角度来看，支持 WSGI 意味着它们不知道所使用的 web 框架——运行金字塔应用程序与运行 Flask 是一样的。从 web 框架的角度来看，支持 WSGI 意味着它们与所使用的 web 服务器无关——在 Apache 上运行与在 uwsgi 上运行是一样的。</p>
+<p class="Para" id="Par8">WSGI 不是在真空中诞生的。在设计它的时候，已经有许多服务器和许多 Python web 框架。正因为如此，WSGI 被设计成易于实现——无论是在服务器端还是在 web 框架端。事实上，它与 CGI 的相似性就是结果。许多这些框架已经支持 CGI，添加 WSGI 支持几乎不需要做什么工作。</p>
+<p class="Para" id="Par9">WSGI 是在 2003 年设计的。它提到的许多框架的名字——例如，Quixote 和 Webware——现在是 web 框架早期实验的遗迹。虽然它没有明确提到它的名字，但当时唯一重要的服务器是 Apache——自那以后，它的受欢迎程度急剧下降。</p>
+<p class="Para" id="Par10">然而，尽管流行的框架和流行的服务器都是较新的，WSGI 标准却经受住了考验。</p>
+<p class="Para" id="Par11">WSGI API 的定义很微妙。它试图抽象的标准 HTTP 是复杂的。现代 web 应用程序需要访问这种复杂性。这个定义跨越了两个文档，有时会显得令人不知所措。</p>
+<p class="Para" id="Par12">这一节将分解 WSGI 并解释组成它的各个部分。</p>
+<h3 class="Heading">精力</h3>
+<p class="Para" id="Par13">Python 的所有主要增强都要经过 PEP (Python 增强提案)过程。WSGI 作为一大特色，最初是在人教版 0333 中描述的。PEP 0333 最初创建于 2003 年 12 月，于 2004 年 8 月完成。</p>
+<p class="Para" id="Par14">虽然这个 PEP 对于 Python 2.x 仍然是正确的，但 PEP 3333 描述了如何为 Python 2.x 和 Python 3.x 实现 WSGI。PEP 3333 创建于 2010 年 9 月，并于 2010 年 10 月完成。</p>
+<p class="Para" id="Par15">这是对 PEP 0333 的一个相当小的改动，处理了在 Python 2.x 和 Python 3.x 之间 WSGI 的正确实现。为了理解为什么它是必要的，理解 Python 2.x 和 Python 3.x 之间的变化是很重要的。</p>
+<p class="Para" id="Par16">Python 2.x 和 Python 3.x 之间的主要变化之一是对 unicode 的处理，特别是字节、字符串和 unicode 类型发生了重大变化。WSGI 作为一个处理(最终)通过 TCP 连接传输字节的标准，需要被细化以澄清哪些类型属于 Python 3.x 中的什么地方。</p>
+<p class="Para" id="Par17">虽然对这些变化的详细解释超出了我们目前的范围，但一些解释对于澄清这些问题是很重要的。Python 2.7+和 Python 3.x 都有一个 bytes 类型(字节序列)和一个 unicode 类型(unicode 码位序列)。然而，字符串类型相当于 Python 2.7+中的字节类型，相当于 Python 3.x 中的 unicode。</p>
+<p class="Para" id="Par18">编码是字节和 unicode 之间的(可能是部分)映射。ASCII 就是这样一种编码——将 128 以下的字节映射为相同值的 unicode 点，并将所有其他字节声明为无效。Latin-1(或 ISO-8859-1)是一种将所有字节映射到相同值的 unicode 点的编码，如果不存在该值的 unicode 点，则声明该字节无效。</p>
+<p class="Para" id="Par19">在管理 web 的协议 HTTP 中，它被分成头部，后面是主体；如果正文是文本的，那么头会指出它是用什么编码的。</p>
+<p class="Para" id="Par20">对报头本身进行编码的问题很微妙:PEP 3333 将它们视为 Latin-1(也称为 ISO-8859-1)，而 Twisted 将它们编码为 UTF-8。最安全的做法是确保所有报头都符合 UTF-8 和拉丁-1 的公共子集:ASCII。这确保了无论我们的头经过什么编码/解码，它们都将保持完整。</p>
+<p class="Para" id="Par21">在 PEP 3333 中，头应该是本地字符串类型 Python 2.x 的字节和 Python 3.x 的 unicode 而内容应该总是字节。</p>
+<p class="Para" id="Par22">PEP 3333 和 PEP 0333 也描述了 WSGI 中间件的概念——对于应用程序来说它看起来像服务器，对于服务器来说它又像应用程序。虽然存在一些 WSGI 中间件，但是请注意一些流行的框架——特别是 Django 和 Pyramid——有它们自己的中间件概念。然而，Flask 依赖于 WSGI 中间件。</p>
+
+<h3 class="Heading">原始示例</h3>
+<p>最简单的 WSGI 应用程序确实很简单:</p>
+<pre>def application(
+                environment,
+                start_response):
+    start_response('200 OK', [('Content-Type', 'text/html')])
+    return [b'hello world']
+
+</pre>
+<p>我们将逐行解释每个 WSGI 应用程序应该具有的三个主要部分:</p>
+<pre>def application(
+
+</pre>
+<p>在 Python 中，函数定义完成两件事:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par26">创建一个<em class="EmphasisTypeItalic ">函数对象。</em></p></li>
+<li><p class="Para" id="Par27">为其指定一个名称。</p></li>
+</ul>
+
+<p class="Para" id="Par28">具体来说，这个函数定义<em class="EmphasisTypeItalic ">创建了</em>一个函数对象，并将其指定给名称<code>application</code>。</p>
+<p>这意味着<code>application</code>现在指向一个可调用的对象。这就是 WSGI 应用程序，按照 PEP 3333:可调用对象。</p>
+<pre>environment,
+
+</pre>
+<p class="Para" id="Par30">第一个参数是所谓的“环境”。这个名字可以追溯到 WSGI 的起源，它是对 CGI 标准的快速改编。</p>
+<p class="Para" id="Par31">CGI 标准处理 web 服务器如何执行脚本。该标准的一部分定义了这些脚本可以访问的环境变量。事实上，大多数关于 web 请求的数据都可以从 CGI 下的环境变量中获得。WSGI 标准采用了相同的变量名和环境的概念，并将其称为 WSGI 应用程序的第一个参数。</p>
+<p><code>environment</code>参数是一个 Python 字典，将指定的名称映射到关于 web 请求的数据。在上面的示例应用程序中，这个参数被忽略了，因为我们总是使用一个常量值。如果这就是我们所需要做的，我们只需要一个静态的 HTML 页面——大多数真正的应用程序在某种程度上依赖于用户输入。</p>
+<pre>start_response):
+
+</pre>
+<p>第二个参数，通常称为<code>start_response</code>，是一个微妙的——也是经常被误解的——参数。它是可调用的，接受两个参数:HTTP 响应代码和 HTTP 头。</p>
+<pre>start_response('200 OK', [('Content-Type', 'text/html')])
+
+</pre>
+<p>我们做的第一件事是调用<code>start_response</code> callable。第一个参数是 200 OK，表示正常的成功 HTTP 响应。第二个参数是头列表。在这种情况下，我们发送的唯一报头是<code>Content-Type</code>报头。这表明我们的响应应该被浏览器解释为 HTML 文本。</p>
+<pre>return [b'hello world']
+
+</pre>
+<p class="Para" id="Par35">下一行返回字节字符串列表。由于我们没有在<code>Content-Type,</code>中包含显式编码，浏览器将使用默认编码。在这种情况下，这是相当安全的——现代浏览器的编码检测将始终正确处理 ASCII 范围内的字节。</p>
+<p class="Para" id="Par36">一般来说，依靠浏览器变得聪明并不是一个好主意:最好的方法是通常使用 UTF-8，并在<code>Content-Type</code>中明确指出。</p>
+<p class="Para" id="Par37">这很重要，因为 HTML 总是用 unicode 来定义的。浏览器会将其翻译成 unicode 字符串<code>u'hello world'</code>，向用户显示问候消息。</p>
+<p class="Para" id="Par38">在本章的其余部分，我们将假设这段代码在一个名为</p>
+<p class="Para" id="Par39"><code>wsgi_hello.py</code>。</p>
+
+<h3 class="Heading">参考实现</h3>
+<p class="Para" id="Par40">尽管 PEP 333(和 3333)建议没有必要在核心 Python 中实现 WSGI，但经验证明并非如此。模块<code>wsgiref</code>实现了一个简单的 web 服务器，它可以支持 WSGI 应用程序。</p>
+<p>下面的命令行将在任何 bash 类 shell 中工作，其中引号允许换行。这样做是为了提高可读性——用分号替换前两个换行符，并删除其余的换行符，会产生一个完全可移植的命令——但是，逐行阅读和解释会更困难。</p>
+<pre>python -c '
+from wsgiref import simple_server
+import wsgi_hello
+simple_server.make_server(
+       "127.0.0.1",
+       8000,
+       wsgi_hello.application
+).serve_forever()
+'
+
+</pre>
+<p>我们将一行一行地检查:</p>
+<pre>python -c '
+
+</pre>
+<p>Python 有一个选项<code>-c</code>，它将下一个参数视为 Python 代码并执行它。这是一种执行短程序的便捷方式，无需将代码放在单独的文件中。</p>
+<pre>from wsgiref import simple_server
+
+</pre>
+<p>导入<code>wsgiref.simple_server</code>模块。这个模块实现了一个单线程单进程同步 web 服务器。虽然该服务器还不能用于生产，但有时对于简单的演示来说还是很方便的。</p>
+<pre>import wsgi_hello
+
+</pre>
+<p>假设上面的代码在一个名为<code>wsgi_hello.py</code>的文件中是很重要的。同样重要的是:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par46">该文件位于当前工作目录中。</p></li>
+<li><p class="Para" id="Par47">使用<code>-c.</code>时，当前工作目录在 Python 模块路径上</p></li>
+</ul>
+
+<p>这将在后面关于寻找 WSGI 应用程序代码的微妙之处的讨论中变得很重要。</p>
+<pre>simple_server.make_server(
+
+</pre>
+<p>这是<code>simple_server</code>模块中的主要功能——创建一个简单的服务器。</p>
+<pre>"127.0.0.1",
+
+</pre>
+<p class="Para" id="Par50">很多例子(包括官方文档中的例子)在这里都会用到<code>""</code>。这将导致 WSGI 服务器绑定到<code>0.0.0.0</code>，即所谓的“any”接口。注意<code>wsgiref</code>不是生产服务器——但即使它是，我们在这里也用它来运行测试和示例代码。将它绑定到 any 接口意味着，根据防火墙的设置，外部人员可能会连接到代码。</p>
+<p>相反，在这个例子中，我们绑定到本地接口<code>"127.0.0.1,"</code>。现在只有在同一台机器上运行的程序才能连接。这很有用——我们可以很容易地用浏览器测试正在运行的服务器，但是只能在与服务器相同的机器上运行一个浏览器。</p>
+<pre>8000,
+
+</pre>
+<p class="Para" id="Par52">按照 IANA 标准的定义，标准网络端口是<code>80</code>。但是，在 UNIX 系统上，1024 以下的端口是为管理员(<code>root</code>)用户帐户保留的。这可以防止非特权用户“劫持”系统端口。虽然导致这种需求的特定线程模型的重要性正在下降，现在许多无特权的用户直接登录到运行 web 服务器的系统并不常见，但它仍然是威胁缓解的一个组件，最重要的是，它仍然在现代的类 UNIX 系统(如 Linux)上得到实施。</p>
+<p>绑定到“看起来相似”的端口，如<code>80</code>、<code>8888,</code>或<code>8080</code>，已经成为开发中的一个传统。</p>
+<pre>wsgi_hello.application
+
+</pre>
+<p>这是实际的 WSGI 应用程序。正如我们提到的，WSGI 应用程序是一个<em class="EmphasisTypeItalic ">可调用的 Python 对象</em>。</p>
+<pre>).serve_forever()
+
+</pre>
+<p class="Para" id="Par55">创建了服务器之后，我们无限循环地运行它。</p>
+<p class="Para" id="Par56">这是一种快速运行 WSGI 应用程序进行测试的简单方法，除了 Python 的标准库之外，没有任何依赖。</p>
+
+<h3 class="Heading">WebOb 示例</h3>
+<p><code>WebOb</code>包是一个低级 web 框架的例子。通常不直接使用它，尽管这样做肯定是可能的。</p>
+<pre>import webob
+def application(environment, start_response):
+    request = webob.Request(environment)
+    response = webob.Response(
+                     text='Hello world!')
+    return response(environment, start_response)
+
+</pre>
+<p>以下是逐行解释:</p>
+<pre>import webob
+
+</pre>
+<p>图书馆足够小，所以我们需要的一切都是顶级的。</p>
+<pre>def application(environment, start_response):
+
+</pre>
+<p>在这种情况下，WSGI 应用程序本身只是一个普通的函数——就好像我们没有使用任何框架一样。</p>
+<pre>request = webob.Request(environment)
+
+</pre>
+<p>请求对象是从 WSGI 环境字典构建的。虽然这个应用程序不检查请求对象，但是它有许多参数的解析视图:URL 和查询参数，以及 cookies 等等。</p>
+<pre>response = webob.Response(
+
+</pre>
+<p>我们创建响应对象。创建响应对象将我们从处理一些底层细节中解放出来。</p>
+<pre>text='Hello world!')
+
+</pre>
+<p>例如，这里我们设置了 text 属性，而不必关心将它转换成一个字节字符串列表。</p>
+<pre>return response(environment, start_response)
+
+</pre>
+<p class="Para" id="Par64">响应对象知道如何调用<code>start_response</code>并写出它的主体。</p>
+
+<h3 class="Heading">金字塔示例</h3>
+<p>金字塔是一个框架，旨在施加最小的开销，但可以很好地扩展到大型项目。</p>
+<pre>from pyramid import config, response
+def hello_world(request):
+    return response.Response('Hello World!')
+with config.Configurator() as conf:
+    conf.add_route('hello',  '/')
+    conf.add_view(hello_world, route_name="hello")
+    application = conf.make_wsgi_app()
+
+</pre>
+<p>我们一行一行地检查申请。</p>
+<pre>from pyramid import config, response
+
+</pre>
+<p>金字塔有相当多的活动部件。对于这个例子，我们只需要这两个模块。</p>
+<pre>def hello_world(request):
+
+</pre>
+<p>注意<code>hello_world</code>是一个普通的 Python 函数。它没有任何包装。这使得重用它更容易:例如，我们可以为它编写测试，或者在不同的功能中使用它。</p>
+<pre>return response.Response('Hello World!')
+
+</pre>
+<p>我们创建一个响应对象，类似于使用<code>WebOb</code>或<code>werkzeug</code>。</p>
+<pre>with config.Configurator() as conf:
+
+</pre>
+<p>使用配置器作为上下文管理器意味着在程序块的末尾，假设没有出现异常，它将自动提交配置并结束它。</p>
+<pre>conf.add_route('hello', '/')
+
+</pre>
+<p>金字塔路由是一个两步过程。将 URL 映射到“逻辑名称”是第一种方法。</p>
+<pre>conf.add_view(hello_world, route_name="hello")
+
+</pre>
+<p>第二步是将逻辑名映射到一个<code>view</code>。</p>
+<pre>application = conf.make_wsgi_app()
+
+</pre>
+<p class="Para" id="Par73">最后，我们要求配置将自己表示为一个 WSGI 应用程序。</p>
+
+
+<h2 class="Heading">入门指南</h2>
+<p class="Para" id="Par74">虽然通过 Twisted 运行 WSGI 应用程序的文档都是正确的，但它是通过一些文档分发的。这里我们将展示一个完整的运行 WSGI 应用程序的工作示例，一次构建一个块。</p>
+<h3 class="Heading">WSGI 服务器</h3>
+<p class="Para" id="Par75">Twisted WSGI 服务器是<code>web</code> tap 插件上的一个选项。在这里的演示中，我们将使用独特的调用插件的方式<code>python -m twisted</code>。虽然它有点啰嗦，但最终是一个在生产中有用的东西。</p>
+<p class="Para" id="Par76">虽然它没有使用 WSGI，但是了解如何运行 web 插件是很有用的——许多选项最终都与操作 WSGI 服务器相关，并且能够单独操作“监听端”进行故障排除也是很有用的。</p>
+<p>假设环境中安装了 Twisted，则可以运行:</p>
+<pre>$ python -m twisted web --port tcp:8000
+
+</pre>
+<p class="Para" id="Par78">并获得一个运行所谓“演示”的网络服务器演示 web 应用程序只是用一条 hello 消息来问候——在本例中，是在端口 8000 上。</p>
+<p>运行一个 WSGI 应用程序很容易——我们上面有六个！</p>
+<pre>$ python -m twisted web --port tcp:8000 --wsgi wsgi_hello.application
+$ python -m twisted web --port tcp:8000 --wsgi werkzeug_hello.application
+$ python -m twisted web --port tcp:8000 --wsgi flask_hello.application
+$ python -m twisted web --port tcp:8000 --wsgi webob_hello.application
+$ python -m twisted web --port tcp:8000 --wsgi pyramid_hello.application
+$ python -m twisted web --port tcp:8000 --wsgi django_hello.application
+
+</pre>
+<p class="Para" id="Par80">值得注意的是，这实际上比使用参考实现更容易<em class="EmphasisTypeItalic "/>。对于参考实现，我们必须编写一个小的 shell 脚本，其中包含一个 4 语句 Python blob 作为<code>-c</code>参数。虽然 Python 命令行和 UNIX shell 合作提供这些有用的工具很好，但是没有它们也很好。</p>
+<p>选项实际上比看起来更强大。</p>
+<pre>$ python -m twisted web --port tcp:8000:interface=127.0.0.1 \
+                        --wsgi wsgi_hello.application
+
+</pre>
+<p class="Para" id="Par82">这将只在本地主机接口上运行 web 服务器，并使其无法从外部访问。在使用咖啡店的网络开发下一代 web 应用程序时，这可能是件好事！</p>
+<p class="Para" id="Par83">端点的全部功能在<code>--port</code>命令行选项中可用，包括插件。一些端点插件非常重要，值得稍后特别提及。</p>
+<p class="Para" id="Par84">注意，与其他全功能的 WSGI 服务器不同，Twisted 没有配置文件。命令行上有一些小的调整选项，但是很多事情都采用默认值——例如，WSGI 线程池的大小。</p>
+<p>自定义这些是通过一个自定义插件来完成的。</p>
+<pre># put in twisted/plugins/twisted_book_wsgi.py
+from zope import interface
+from twisted.python import usage, threadpool
+from twisted import plugin
+from twisted.application import service, strports
+from twisted.web import wsgi, server
+from twisted.internet import reactor
+import wsgi_hello
+@interface.implementer(service.IServiceMaker, plugin.IPlugin)
+class ServiceMaker(object):
+    tapname = "twisted_book_wsgi"
+    description = "WSGI for book"
+    class options(usage.Options): pass
+    def makeService(self, options):
+        pool = threadpool.ThreadPool(minthreads=1, maxthreads=100)
+        reactor.callWhenRunning(pool.start)
+        reactor.addSystemEventTrigger('after', 'shutdown', pool.stop)
+        root = wsgi.WSGIResource(reactor, pool, wsgi_hello.application)
+        site = server.Site(root)
+        return strports.service('tcp:8000', site)
+        serviceMaker = ServiceMaker()
+
+</pre>
+<p>我们逐一检查非进口产品:</p>
+<pre>@interface.implementer(service.IServiceMaker, plugin.IPlugin) 
+
+
+
+
+</pre>
+<p>这就是如何编写一个扭曲的 tap 插件。它将一个类标记为</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par88">作为插件的东西；</p></li>
+<li><p class="Para" id="Par89">知道如何将命令行转换成服务的东西(<code>service.IServiceMaker</code>)。</p></li>
+</ul>
+
+<p>它通过使用<code>zope.interface</code>框架来做到这一点，该框架允许显式标记接口及其实现——以及对该信息的编程访问。这个编程接口允许 Twisted 插件系统工作。</p>
+<pre>class ServiceMaker(object):
+
+</pre>
+<p>类的名字其实并不重要。唯一重要的是实例的名字是<code>serviceMaker</code>。</p>
+<pre>tapname = "twisted_book_wsgi"
+
+</pre>
+<p>这是插件的名称，用作<code>python -m twisted</code>的第一个参数。</p>
+<pre>description = "WSGI for book"
+
+</pre>
+<p>通常描述应该更具信息性，因为在没有参数的情况下运行<code>python -m twisted</code>时，它会出现在帮助文本中。</p>
+<pre>class options(usage.Options): pass
+
+</pre>
+<p class="Para" id="Par94">由于这是一个最小的插件，我们“硬编码”一切。这并不是真正的硬编码——在某些时候，必须决定哪个端口和哪个应用程序。在插件编写时创建它通常是有意义的，特别是如果使用类似 12 因素和从环境变量中查询所有配置的话。</p>
+<p>但是，至少从命令行提供端口选项通常是有用的。</p>
+<pre>def makeService(self, options):
+
+</pre>
+<p>该函数在解析命令行后接受 options 实例。</p>
+<pre>pool = threadpool.ThreadPool(minthreads=1, maxthreads=100)
+
+</pre>
+<p>这是<em class="EmphasisTypeItalic ">而不是</em>一个好配置的例子。事实上，这几乎肯定是一个糟糕的线程池配置。但是，通常对线程数量进行一些微调是有意义的。这显然取决于应用程序、机器和使用特性。</p>
+<pre>reactor.callWhenRunning(pool.start)
+
+</pre>
+<p>反应堆启动时启动水池。</p>
+<pre>reactor.addSystemEventTrigger('after', 'shutdown', pool.stop)
+
+</pre>
+<p>反应堆完成后关闭水池。</p>
+<pre>root = wsgi.WSGIResource(reactor, pool, wsgi_hello.application)
+
+</pre>
+<p>构建根资源。在这里，我们将特定的线程池与特定的 WSGI 应用程序结合起来。</p>
+<pre>site = server.Site(root)
+
+</pre>
+<p>从资源对象构建实际理解 HTTP 的<code>Site</code>对象。</p>
+<pre>return strports.service('tcp:8000', site)
+
+</pre>
+<p>构建一个端点并监听 HTTP 协议。</p>
+<pre>serviceMaker = ServiceMaker()
+
+</pre>
+<p class="Para" id="Par103">如上所述，实际的插件依赖于一个实例，而不是一个类。我们创建我们定义的类的一个实例。</p>
+<p class="Para" id="Par104">这允许我们用一个更好(或者，在这种情况下，更差)的线程池运行相同的 hello world 应用程序。也有可能因为许多其他原因构建一个插件——其中一些我们将在本章的剩余部分讨论。</p>
+
+<h3 class="Heading">查找代码</h3>
+<p class="Para" id="Par105">Twisted WSGI 服务器需要做的最重要的事情是找到它需要运行的 WSGI 应用程序。然而，这在传统上是一件棘手的事情。</p>
+
+<h3 class="Heading">默认路径</h3>
+<p class="Para" id="Par106">当使用<code>-c</code>或<code>-m</code>启动 Python 时，当前目录<code>.</code>位于导入路径上。上面，在使用参考实现时，我们使用了<code>-c</code>，在使用 Twisted WSGI 服务器时，我们使用了<code>-m</code>。</p>
+<p class="Para" id="Par107">然而，当直接用脚本运行 Python 时，<code>script's</code>目录，而不是当前目录，被添加到路径中。因为这就是控制台脚本入口点的工作方式，如果我们使用<code>twist</code>，而不是<code>python -m twisted</code>，当前目录将不再位于导入路径上。</p>
+<p class="Para" id="Par108">依赖于路径中的当前目录是可行的——直到它不可行时，原因看起来很简单。虽然对于演示目的来说这很好，但是对于生产用途来说，我们需要更强大的东西。</p>
+
+<h3 class="Heading">皮顿路径</h3>
+<p class="Para" id="Par109">一种方法是将环境变量<code>PYTHONPATH</code>设置为一个值。第一个问题是哪一个值:一些值是 T1，而另一些值是 T2。第一种选择的优势是它可以跟随外壳——但这种优势同样是它的弱点，因为像<code>cd</code>这样简单的东西就可以打破它。</p>
+<p class="Para" id="Par110">下一个有具体的优点——但是同样有远程操作的问题，在稍后运行 Python 时会突然导入一个旧的 WSGI 应用程序。这对于在 Python 路径上寻找东西的项目来说尤其是个问题——比如 Twisted 的插件实现。出现一个额外的插件可能会非常令人惊讶。</p>
+
+<h3 class="Heading">setup.py</h3>
+<p class="Para" id="Par111">最好的解决方案是写一个<code>setup.py</code>文件，把代码变成一个合适的包。必须选择一个名字，没错，但是通常最顶层模块的名字就足够了。必须选择一个版本，但是如果没有发布它的意图，那么<code>0.0.0dev1</code>是一个简单、安全的选择。</p>
+<p class="Para" id="Par112">出于开发目的，通常最简单的方法是用<code>pip install -e .</code>将其安装到虚拟环境中。这将跟踪对源文件所做的更改，从而在与虚拟环境系统或任何其他类似 virtualenv 的系统(如 Nix 或 Conda)集成时最大限度地减少麻烦。</p>
+
+<h3 class="Heading">为什么扭曲</h3>
+<p class="Para" id="Par113">Twisted 当然不是运行 WSGI 应用程序的唯一选择。Gunicorn、uwsgi 和 Apache 的 mod_wsgi 都可以做到这一点。然而，Twisted 有一些具体的好处。</p>
+
+<h3 class="Heading">生产与开发</h3>
+<p class="Para" id="Par114">大多数 web 框架自带内置服务器，通常基于<code>wsgiref</code>实现。毫无疑问，这些 web 服务器上会出现警告，比如“不要在生产环境中使用此服务器”。它没有经过安全审计或性能测试。”(这是从 Django 的文档中引用的。)在最糟糕的情况下，这些警告没有得到重视——出于无知或权宜之计——网站在开发服务器上运行。</p>
+<p class="Para" id="Par115">在最好的情况下，这些警告得到了解决，开发人员使用开发服务器，而生产人员使用生产级服务器。这导致了环境漂移——例如，WSGI 实现中的一些细微差异意味着生产中的一些行为不会在开发中重现。最重要的是，开发人员不熟悉生产级 web 服务器的常规操作。日志、错误消息和故障模式都是独一无二的——通常会导致开发人员和操作人员之间的脱节。</p>
+<p class="Para" id="Par116">最后，但同样重要的是，当使用两个 web 服务器时，需要一些逻辑来决定何时在何处运行。工具经常会混淆，并意外地在生产中运行开发服务器。由于开发服务器没有完全崩溃，这通常不会导致立即崩溃，而是一种奇怪的问题模式——可能是一些模糊的性能问题。</p>
+<p class="Para" id="Par117">相反，Twisted 既可用于开发，也可用于生产。可以从命令行直接使用 Twisted，就像我们上面做的那样，只传递应用程序的名称。如果后来证明编写一个定制插件是有用的，那么这个插件通常也可以用于开发。这可以消除很多潜在的生产/开发偏差。</p>
+<p>一些更高级的开发服务器支持一个有用的特性——代码的自动重载。然而，通过一点点的配置，这在 Twisted 上也是可能的。第一步是用<code>pip install -e</code>安装我们的代码，这样仅仅重启服务器就足够了。然后，我们不直接运行服务器，而是运行</p>
+<pre>$ watchmedo shell-command \
+     --patterns="*.py" \
+     --recursive \
+     --command='python -m twisted web --wsgi=wsgi_hello.application' \
+     .
+
+</pre>
+<p class="Para" id="Par119">每当文件改变时，这将自动重新启动服务器。它利用了<code>watchdog</code> PyPI 包。</p>
+
+<h3 class="Heading">坦克激光瞄准镜（Tank Laser-Sight 的缩写）</h3>
+<p class="Para" id="Par120">TLS(传输层安全性)是过去被称为 SSL(安全套接字层)的最新版本。TLS 是在 TCP 之上工作的加密和密钥交换协议。</p>
+<p>TLS 做两件事:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par122">加密:使用 TLS 的通信可以抵抗窃听。</p></li>
+<li><p class="Para" id="Par123">端点身份验证:使用 TLS 时，可以验证我们正在与预期的端点进行对话。</p></li>
+</ul>
+
+<p class="Para" id="Par124">虽然第一种解释在解释 TLS 的重要性时很流行，但第二种解释甚至更重要。一些 WSGI 应用程序可能没有什么敏感数据:但是，由于它们将 HTML、JavaScript 和 CSS 发送到潜在易受攻击的浏览器，因此确保没有恶意软件通过网络传递是非常重要的。</p>
+<p class="Para" id="Par125">TLS 验证端点的方式是检查由证书颁发机构签名的证书。一般来说，让证书颁发机构签署证书的两种方法是说服它您是合法的端点，或者创建您自己的证书颁发机构。虽然创建一个真正的证书颁发机构几乎是不可能的，但这往往是数据中心内的首选解决方案，在数据中心内，同一个人或团体负责连接的两端。</p>
+<p>假设密钥在<code>key.pem</code>中，证书在<code>cert.pem</code>中，</p>
+<pre>$ python -m twisted web \
+            --port ssl:port=8443:privateKey=key.pem:certKey=cert.pem \
+            --wsgi wsgi_hello.application
+
+</pre>
+<p class="Para" id="Par127">将与应用程序一起运行 TLS 服务器。注意，在这种情况下，<code>environment</code>字典会将<code>wsgi.url_scheme</code>设置为<code>"https."</code>，WSGI 应用程序可以检查这一点，看看它们是否在 TLS 之后。</p>
+<p class="Para" id="Par128">这是在 WSGI 服务器中直接实现 TLS 的一个优点。否则，需要查询模糊和不标准的 HTTP 头来了解请求是否安全。</p>
+
+<h3 class="Heading">服务器名称指示</h3>
+<p class="Para" id="Par129">WSGI 应用程序可以访问头文件，包括<code>Host</code>头文件。这意味着 WSGI 应用程序可以使用客户端访问它的主机作为它的参数之一——比如说，在<code>example.com</code>和<code>m.example.com</code>上提供不同的内容，作为支持移动浏览器的一种方式。</p>
+<p class="Para" id="Par130">假设我们希望应用程序仍然有 TLS 来验证主机名，这意味着我们需要有针对<code>m.example.com</code>和<code>example.com</code>的证书，并知道服务哪一个。TLS 支持一个名为“服务器名称指示”的扩展，它允许客户端指示服务器应该证明它拥有哪个名称。</p>
+<p>为了在 WSGI 中支持 SNI，我们需要做几件事:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par132">获取相关证书和密钥。</p></li>
+<li><p class="Para" id="Par133">对于每个主机名，<em class="EmphasisTypeItalic ">将</em>证书和密钥连接到一个文件中(通常使用 UNIX 命令<code>cat</code>)。这个文件应该被命名为<code>&lt;host&gt;.pem</code>，例如<code>m.example.com.pem</code>。</p></li>
+<li><p class="Para" id="Par134">把所有这些文件放在一个目录中，比如说<code>/var/lib/keys</code>。</p></li>
+<li><p class="Para" id="Par135">从 PyPI 安装<code>txsni</code>包。</p></li>
+<li><p class="Para" id="Par136">快跑。</p></li>
+</ul>
+
+<p>
+                 
+              </p>
+<pre>$ python -m twisted web \
+            --port txsni:/var/lib/keys:tcp:8443 \
+            --wsgi wsgi_hello.application
+
+</pre>
+              <p class="Para" id="Par138">这个例子适用于我们希望从两个不同的域名(例如，<code>example.com</code>和<code>www.example.com</code>)提供相同内容(安全地)的情况。</p>
+<p class="Para" id="Par139">如果我们想为不同的子域提供不同的内容，例如，<code>app.example.com</code>用于动态应用程序，<code>static.example.com</code>用于静态文件，我们可以对创建<code>twisted.web.vhost.NameVirtualHost</code>资源的自定义插件使用相同的<code>port</code>参数。</p>
+<p>下面是一个插件例子:</p>
+<pre>from zope import interface
+
+from twisted.python import usage, threadpool
+from twisted import plugin
+from twisted.application import service, strports
+from twisted.web import wsgi, server, static, vhost
+from twisted.internet import reactor
+
+import wsgi_hello
+
+@interface.implementer(service.IServiceMaker, plugin.IPlugin)
+class ServiceMaker(object):
+    tapname = "twisted_book_vhost"
+    description = "Virtual hosting for book"
+    class options(usage.Options):
+        optParameters = [["port", "p", None,
+                          "strports description of the port to "
+                          "start the server on."]]
+    def makeService(self, options):
+        application = wsgi_hello.application
+        pool = threadpool.ThreadPool(minthreads=1, maxthreads=100)
+        reactor.callWhenRunning(pool.start)
+        reactor.addSystemEventTrigger('after', 'shutdown', pool.stop)
+        dynamic = wsgi.WSGIResource(reactor, pool, application)
+        files = static.File('static')
+        root = vhost.NameVirtualHost()
+        root.addHost(b'app.example.org', dynamic)
+        root.addHost(b'static.example.org', files)
+        site = server.Site(root)
+        return strports.service(options['port'], site)
+serviceMaker = ServiceMaker()
+
+</pre>
+<p>有趣的线条是</p>
+<pre>root = vhost.NameVirtualHost()
+root.addHost(b'app.example.org', dynamic)
+root.addHost(b'static.example.org', files)
+
+</pre>
+<p class="Para" id="Par142">这创建了一个根资源，它将对<code>app.example.org</code>的所有请求重定向到动态资源，并将对<code>static.example.org</code>的所有请求重定向到静态资源。注意，因为我们选择了<code>example.org</code>，所以出于测试目的，将这些名称指向您的 hosts 文件中的<code>127.0.0.1</code>是安全的。</p>
+<p class="Para" id="Par143">请注意，在这种情况下，我们没有选择默认值。通过不同的名称(如<code>localhost</code>)访问某个站点会导致 404 错误。可以在一个<code>NameVirtualHost</code>上设置<code>default</code>属性，为所有其他名字设置一个默认根。</p>
+
+<h3 class="Heading">静态文件</h3>
+<p class="Para" id="Par144">使用 Twisted 作为 WSGI 服务器可以让我们从同一个 web 服务器上服务静态资产和动态应用程序。这包括图像、JavaScript 文件、CSS 文件以及任何其他文件。</p>
+<p class="Para" id="Par145">Twisted is 最初是为高性能网络应用程序而构建的，而 Twisted web 服务器在提供静态文件时，可以满足除了最繁重的需求之外的所有需求。然而，当满足这些需求时，大多数应用将在内容分发网络(CDN)的背后提供服务。</p>
+<p class="Para" id="Par146">CDN 意味着静态文件服务速度的任何差异都是无关紧要的。然而，在这些情况下，能够从 Python 代码设置缓存控制头是很方便的。用 Python 编写 WSGI 应用程序的团队通常精通 Python，并且更喜欢用它来学习另一种高度特定的领域语言，比如大多数服务器的内置配置语言。</p>
+<p class="Para" id="Par147">然而，要理解如何做到这一点，重要的是要更深入地研究 Twisted web 服务器 API 是如何——并且，作为一种副作用，要多理解一些早先几乎没有解释的东西。</p>
+
+<h3 class="Heading">资源模型</h3>
+<p class="Para" id="Par148">大多数现代 web 应用服务器，如果它们有路由模型的话，都有一个<em class="EmphasisTypeItalic ">模式匹配</em>路由模型。Flask、Django 和 Pyramid，正如我们前面看到的，都以某种方式将 URL 模式映射到代码。</p>
+<p class="Para" id="Par149">扭曲的网早于所有这些。在 URL 模式匹配变得流行之前，将 web 资源视为一个<code>tree</code>也是一种选择——这就是 Twisted web 采用的选择。因此，它有一个包含子资源的资源模型。</p>
+<p class="Para" id="Par150">只要我们只使用了 WSGI，这并不太重要:WSGI 资源用<code>isLeaf = True</code>标记自己。这意味着它没有子节点，当到达时树遍历停止。这允许 WSGI 资源将路径传递给 web 应用程序框架，用于自己的路由。因为我们使用 WSGI 资源作为根资源——直接传递给<code>Site</code>构造函数的资源——这意味着资源树模型只是理论上的。</p>
+<p class="Para" id="Par151">然而，当将不同的资源组合在一起时，这个模型的细节是至关重要的。</p>
+
+<h3 class="Heading">纯静态</h3>
+<p>为了理解如何在 Twisted web 上提供静态文件服务，有必要先编写一个插件来实现这一点——不使用动态资源。</p>
+<pre>from zope import interface
+
+from twisted.python import usage, threadpool
+from twisted import plugin
+from twisted.application import service, strports
+from twisted.web import static, server
+from twisted.internet import reactor
+
+@interface.implementer(service.IServiceMaker, plugin.IPlugin)
+class ServiceMaker(object):
+    tapname = "twisted_book_static"
+    description = "Static for book"
+    class options(usage.Options):
+        pass
+    def makeService(self, options):
+        root = static.File('static')
+        site = server.Site(root)
+        return strports.service('tcp:8000', site)
+serviceMaker = ServiceMaker()
+
+</pre>
+<p>这里唯一新的一行是</p>
+<pre>root = static.File('static')
+
+</pre>
+<p class="Para" id="Par154">这定义了一个<code>File</code>资源。<code>File</code>资源也是一个叶资源，它将 URL 的其余部分映射到磁盘上的一个路径。这使用了一个相对路径，<code>static</code>，指向当前工作目录。这对于演示来说非常有用，但是生产应用程序通常会使用完整的路径。</p>
+<p class="Para" id="Par155">获得完整路径的一种方法是直接用 Python 代码打包文件。打包它以及在运行时找到它需要一些黑客技术。</p>
+<p>下面是一个例子<code>setup.py</code>，以及使用它的插件:</p>
+<pre>import setuptools
+setuptools.setup(
+    name='static_server',
+    license='MIT',
+    description="Server: Static",
+    long_description="Static, the web server",
+    version="0.0.1",
+    author="Moshe Zadka",
+    author_email="zadka.moshe@gmail.com",
+    packages=setuptools.find_packages(where='src') + ['twisted/plugins'],
+    package_dir={"": "src"},
+    include_package_data=True,
+    install_requires=['twisted', 'setuptools'],
+) 
+
+
+
+
+</pre>
+<p>最有趣的台词是<code>include_package_data=True</code>。为了获得一些有趣的数据，我们需要一个清单:在<code>MANIFEST.in</code>中，我们将</p>
+<pre>include src/static_server/a_file.html
+
+</pre>
+<p>为该文件提供服务的插件(在本例中是 on /)如下所示:</p>
+<pre>import pkg_resources
+
+from zope import interface
+
+from twisted.python import usage, threadpool
+from twisted import plugin
+from twisted.application import service, strports
+from twisted.web import static, server, resource
+from twisted.internet import reactor
+
+@interface.implementer(service.IServiceMaker, plugin.IPlugin)
+class ServiceMaker(object):
+    tapname = "twisted_book_pkg_resources"
+    description = "Static for book"
+    class options(usage.Options):
+        pass
+    def makeService(self, options):
+        root = resource.Resource()
+        fname = pkg_resources.resource_filename("static_server",
+                                                "a_file.html")
+        static_resource = static.File(fname)
+        root.putChild(“, static_resource)
+        site = server.Site(root)
+        return strports.service('tcp:8000', site)
+serviceMaker = ServiceMaker()
+
+</pre>
+<p>这里有趣的新行是:</p>
+<pre>fname = pkg_resources.resource_filename("static_server",
+                                        "a_file.html")
+static_resource = static.File(fname)
+
+</pre>
+<p class="Para" id="Par160">这使用了<code>pkg_resources</code>包，它是<code>setuptools</code>的一部分，在运行时查找文件名。</p>
+<p class="Para" id="Par161">请注意，即使我们的包使用类似于<code>pex</code>(或内置的<code>zipapp</code>)的工具直接部署为 zip 文件，这也是可行的:<code>pkg_resources</code>足够聪明，可以在给出文件名之前透明地解压文件。</p>
+<p class="Para" id="Par162">当使用像<code>Jinja2</code>或<code>Chameleon</code>这样的系统时，这种技术对于包含模板文件也很有用。</p>
+
+<h3 class="Heading">将静态文件与 WSGI 结合起来</h3>
+<p>我们还可以通过 Twisted 自己的 web 服务器为 WSGI 应用程序提供静态资源。</p>
+<pre>import os
+
+
+
+from zope import interface
+from twisted.python import usage, threadpool
+from twisted import plugin
+from twisted.application import service, strports
+from twisted.web import wsgi, server, static, resource
+from twisted.internet import reactor
+import wsgi_hello
+class DelegatingResource(resource.Resource):
+    def __init__ (self, wsgi_resource):
+        resource.Resource. __init__ (self)
+        self._wsgi_resource = wsgi_resource
+    def getChild(self, name, request):
+        request.prepath = []
+        request.postpath.insert(0, name)
+        return self._wsgi_resource
+@interface.implementer(service.IServiceMaker, plugin.IPlugin)
+class ServiceMaker(object):
+    tapname = "twisted_book_combined"
+    description = "twisted_book_combined"
+    class options(usage.Options): pass
+    def makeService(self, options):
+        application = wsgi_hello.application
+        pool = threadpool.ThreadPool()
+        reactor.callWhenRunning(pool.start)
+        reactor.addSystemEventTrigger('after', 'shutdown', pool.stop)
+        wsgi_resource = wsgi.WSGIResource(reactor, pool, application)
+        static_resource = static.File('.')
+        root = DelegatingResource(wsgi_resource)
+        root.putChild('static', static_resource)
+        site = server.Site(root)
+        return strports.service('tcp:8000', site)
+serviceMaker = ServiceMaker()
+
+
+
+
+</pre>
+<p>我们一行一行地研究新代码:</p>
+<pre>class DelegatingResource(resource.Resource):
+
+</pre>
+<p>我们定义了一个名为<code>DelegatingResource</code>的类。这将是我们的根。它继承自<code>resource.Resource</code>。注意，它是<em class="EmphasisTypeItalic ">而不是</em>一个叶资源——所以站点将遍历它。</p>
+<pre>def __init__ (self, wsgi_resource):
+
+</pre>
+<p>我们用 WSGI 资源初始化委托者。</p>
+<pre>resource.Resource. __init__ (self)
+
+</pre>
+<p>在适当的时候，我们调用超类构造函数。这一点至关重要——<code>Resource</code>没有它的构造函数就不能正常运行。</p>
+<pre>self.wsgi_resource = wsgi_resource
+
+</pre>
+<p>我们将 WSGI 资源保存在一个属性中。</p>
+<pre>def getChild(self, name, request):
+
+</pre>
+<p><code>getChild</code>的名字有点混乱。语义是获得一个<em class="EmphasisTypeItalic ">动态</em>子节点。一个静态的子对象，也就是已经被手动添加到一个<code>Resource</code>中的子对象，将会阻止这个方法被调用。根永远不会被调用到<code>render</code>:即使像/这样的 URL 也会导致一个带有空字符串的子遍历<code>name</code>。</p>
+<pre>request.prepath = []
+request.postpath.insert(0, name)
+
+</pre>
+<p>我们将名称从<code>prepath</code>移动到<code>postpath</code>，从而欺骗作为根的委托资源。请注意，只有当这个资源是根资源时，这个技巧才有效。</p>
+<pre>return self.wsgi_resource
+
+</pre>
+<p>在欺骗路径假装少完成了一次遍历之后，我们返回 WSGI 资源。</p>
+<pre>static_resource = static.File('.')
+
+</pre>
+<p>我们创建静态资源。这与纯静态资源的情况没有什么不同。</p>
+<pre>root = DelegatingResource(wsgi_resource)
+
+</pre>
+<p>我们创建委托资源作为我们的根资源。</p>
+<pre>root.putChild('static', static_resource)
+
+</pre>
+<p class="Para" id="Par174">如前所述，手动引入的子元素将覆盖<code>getChild</code>方法。因此，对于任何以<code>/static/</code>开头的路径，都会提供一个静态资源。</p>
+
+<h3 class="Heading">内置计划任务</h3>
+<p>对于下面的例子，我们想要一个依赖于我们可以改变的参数的 WSGI 应用程序。</p>
+<pre>class _Application(object):
+    def __init__ (self, greeting='hello world'):
+        self.greeting = greeting
+    def __call__ (self, environment, start_response):
+        start_response('200 OK', [('Content-Type',
+                                   'text/html; charset=utf-8')])
+        return [self.greeting.encode('utf-8')]
+application = _Application()
+
+</pre>
+<p>我们将逐行检查代码:</p>
+<pre>class _Application(object):
+
+</pre>
+<p>如前所述，关于 WSGI 应用程序的唯一假设是它们是可调用的对象。在这种情况下，我们通过用<code>__call__</code>方法定义一个类来创建一个可调用对象。</p>
+<pre>def __init__ (self, greeting='hello world'):
+
+</pre>
+<p>我们用一个问候进行初始化，使用标准的默认值。</p>
+<pre>self.greeting = greeting
+
+</pre>
+<p>在构造函数中，我们没有做任何比设置属性更有趣的事情。</p>
+<pre>def __call__ (self, environment, start_response):
+
+</pre>
+<p>因为这是一个 WSGI 应用程序，所以用标准参数调用它。</p>
+<pre>start_response('200 OK', [('Content-Type',
+                           'text/html; charset=utf-8')])
+
+</pre>
+<p>这与之前的<code>start_response</code>调用相同，只是增加了一个显式字符集。由于创建者可以传递任意的 unicode 字符串，并且我们将它们编码为<code>utf-8</code>，我们需要让浏览器知道这是我们所做的。</p>
+<pre>return [self.greeting.encode('utf-8')]
+
+</pre>
+<p>我们希望能够将问候语设置为字符串。因此，这必须将它们编码成字节。</p>
+<pre>application = _Application()
+
+</pre>
+<p>我们不关心类，我们想要的是它作为应用程序的一个实例。</p>
+<pre>import time
+from zope import interface
+from twisted.python import usage, reflect, threadpool, filepath
+from twisted import plugin
+from twisted.application import service, strports, internet
+from twisted.web import wsgi, server, static
+from twisted.internet import reactor
+import wsgi_param
+
+def update(application, reactor):
+    stamp = time.ctime(reactor.seconds())
+    application.greeting = "hello world, it's {}".format(stamp)
+
+@interface.implementer(service.IServiceMaker, plugin.IPlugin)
+class ServiceMaker(object):
+    tapname = "twisted_book_scheduled"
+    description = "Changing application"
+    class options(usage.Options): pass
+    def makeService(self, options):
+        s = service.MultiService()
+        pool = threadpool.ThreadPool()
+        reactor.callWhenRunning(pool.start)
+        reactor.addSystemEventTrigger('after', 'shutdown', pool.stop)
+        root = wsgi.WSGIResource(reactor, pool, wsgi_param.application)
+        site = server.Site(root)
+        strports.service('tcp:8000', site).setServiceParent(s)
+        ts = internet.TimerService(1, update, wsgi_param.application, reactor)
+        ts.setServiceParent(s)
+        return s
+serviceMaker = ServiceMaker()
+
+def update(application, reactor):
+
+</pre>
+<p>这个函数将被定期调用来更新应用程序。</p>
+<pre>stamp = time.ctime(reactor.seconds())
+
+</pre>
+<p>我们在这里用<code>reactor.seconds()</code>，而不是<code>time.time()</code>。如果这段代码变得更大，这将有助于测试性。</p>
+<pre>application.greeting = "hello world, it's {}".format(stamp)
+
+</pre>
+<p class="Para" id="Par186">这将设置应用程序问候语属性。因为它是公共的，所以被认为是类的 API 的一部分。</p>
+<p class="Para" id="Par187">注意:这是利用了可变的全局状态，这通常是一种危险的模式——在线程的情况下更是如此。虽然 Twisted 的主循环没有线程，但 WSGI 的工作都在 Twisted 的线程池中运行。</p>
+<p>但是，在这种特定情况下，更改是安全的——线程将看到旧的问候语或新的问候语。这是因为 Python 的全局解释器锁，它确保 Python 线程看到一致的状态——并且因为这只是用一个字符串替换另一个字符串。</p>
+<pre>s = service.MultiService()
+
+</pre>
+<p>这将创建一个启动多个服务的服务。它允许我们从同一个服务中进行 web 服务和更新。</p>
+<pre>strports.service('tcp:8000', site).setServiceParent(s)
+
+</pre>
+<p>这一次，我们没有返回<code>strports.service</code>结果，而是将其父对象设置为<code>MultiService</code>。这会把它附在<code>MultiService</code>小时候。</p>
+<pre>ts = internet.TimerService(1, update, wsgi_param.application, reactor)
+
+</pre>
+<p>这里我们创建了一个每 1 秒触发一次的定时器，并用参数<code>wsgi_param.application</code>和<code>reactor</code>调用函数<code>update</code>。</p>
+<pre>ts.setServiceParent(s)
+
+</pre>
+<p>将计时器附加到返回值。</p>
+<pre>return s
+
+</pre>
+<p class="Para" id="Par193">并返回<code>MultiService</code>。</p>
+<p class="Para" id="Par194">虽然这肯定不是显示时钟的最佳方式，但在很多情况下，将检索值和显示值分开是有意义的。设想一个股票行情应用程序:最好每秒检索一次股票价格，并在 web 请求发生时从内存中显示一个值，而不是让每个 web 请求等待一个(可能很慢的)后端服务。</p>
+<p class="Para" id="Par195">这显示了在进程中运行计划服务的好处。当然，即使没有<em class="EmphasisTypeItalic ">有</em>要处理的事情也可以用这种方式来安排——例如，日志清理。这允许将应用程序配置保存在一个地方，而不是像<code>cron</code>那样添加对服务的依赖。</p>
+
+<h3 class="Heading">控制通道</h3>
+<p>通常，在运行时修改 web 应用程序的配置是很有用的，无需重新启动或重建。这方面的一些例子有:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par197">解决问题时修改调试级别。</p></li>
+<li><p class="Para" id="Par198">修改 A/B 测试中的质控/测试百分比。</p></li>
+<li><p class="Para" id="Par199">如果客户报告问题，则关闭“功能标志”。</p></li>
+</ul>
+
+<p class="Para" id="Par200">这意味着，除了应用程序最终用户与应用程序交互的“应用程序通道”，我们还需要一个辅助通道，即“控制通道”，它将修改行为。通过不同的端口(可能是不同的协议)使用该通道要安全得多——未授权用户访问控制通道的攻击媒介可以通过传统的防火墙和网络配置来缓解，而不仅仅是通过应用程序级访问控制。</p>
+<p class="Para" id="Par201">因为 Twisted 本质上是一个网络事件框架，所以它非常适合向 WSGI 应用程序添加控制通道。由于这种控制通道本质上是跨越线程边界的，所以有必要注意和考虑线程安全。</p>
+<p class="Para" id="Par202">然而，它确实允许将有趣的行为添加到 WSGI 应用程序中。</p>
+<p>下面的插件展示了一种使用网络控制问候的方法。</p>
+<pre>from zope import interface
+
+from twisted.python import usage, reflect, threadpool, filepath
+from twisted import plugin
+from twisted.application import service, strports, internet
+from twisted.web import wsgi, server, static
+from twisted.internet import reactor, protocol
+from twisted.protocols import basic
+
+import wsgi_param
+
+class UpdateMessage(basic.LineReceiver):
+
+    def lineReceived(self, line):
+        self.factory.application.greeting = line.decode('utf-8')
+        self.transport.writeSequence([b"greeting is now: ", line, b"\r\n"])
+        self.transport.loseConnection()
+
+@interface.implementer(service.IServiceMaker, plugin.IPlugin)
+class ServiceMaker(object):
+    tapname = "twisted_book_control"
+    description = "Changing application"
+    class options(usage.Options): pass
+    def makeService(self, options):
+        s = service.MultiService()
+        pool = threadpool.ThreadPool()
+        reactor.callWhenRunning(pool.start)
+        reactor.addSystemEventTrigger('after', 'shutdown', pool.stop)
+        root = wsgi.WSGIResource(reactor, pool, wsgi_param.application)
+        site = server.Site(root)
+        strports.service('tcp:8000', site).setServiceParent(s)
+        factory = protocol.Factory.forProtocol(UpdateMessage)
+        factory.application = wsgi_param.application
+        strports.service('tcp:8001',factory).setServiceParent(s)
+        return s
+serviceMaker = ServiceMaker()
+
+</pre>
+<p>我们一行一行地检查新代码:</p>
+<pre>class UpdateMessage(basic.LineReceiver):
+
+</pre>
+<p>这定义了协议<code>basic.LineReceiver</code>的一个子类。它将消息分成行，使我们能够轻松地划分消息。</p>
+<pre>def lineReceived(self, line):
+
+</pre>
+<p>这将在接收到一行时调用——注意，该行将<em class="EmphasisTypeItalic ">而不是</em>包含终止字符(默认情况下，回车后面跟一个换行符，<code>\r\n</code>)。</p>
+<pre>self.factory.application.greeting = line
+
+</pre>
+<p>我们将问候语设置到呼入线路。</p>
+<pre>factory = protocol.Factory.forProtocol(UpdateMessage)
+
+</pre>
+<p>我们创建了一个工厂，它将在客户端连接时产生<code>UpdateMessage</code>的实例。</p>
+<pre>factory.application = wsgi_param.application
+
+</pre>
+<p>我们将工厂中的应用程序设置为 WSGI 应用程序。这允许协议对象访问应用程序，以便改变问候语。</p>
+<pre>strports.service('tcp:8001',factory).setServiceParent(s)
+
+</pre>
+<p class="Para" id="Par210">我们将此协议绑定到一个更高的端口。</p>
+
+
+<h2 class="Heading">使用多核的策略</h2>
+<p class="Para" id="Par211">WSGI 服务器的一个限制是它只能运行一个进程。由于 Python 拥有全局解释器锁，这意味着在多核机器上，只有一个内核用于 WSGI。通常，这不是问题:在一些环境中，较低层将向应用程序呈现单核“机器”。例如，使用虚拟化平台或容器编排框架时就是这种情况。</p>
+<p class="Para" id="Par212">然而，由于许多原因，有时需要在应用层解决正确的多进程解决方案。在这里，我们展示了其中的一些方法。</p>
+<h3 class="Heading">负载平衡</h3>
+<p>最简单的方法是启动多个 Twisted WSGI 进程，并在它们前面放置一个负载平衡器。一个流行的负载平衡器是 HAProxy。拥有一个完整的 HAProxy 教程超出了我们的范围，但是下面是一个 HAProxy 配置的例子。为了简化配置，配置是针对纯文本 HTTP 的——尽管 HAProxy 经常用于终止 SSL。</p>
+<pre>defaults
+    log     global
+    mode    http
+frontend localnodes
+    bind *:8080
+    mode http
+    default_backend nodes
+backend nodes
+    mode http
+    balance roundrobin
+    option forwardfor
+    http-request set-header X-Forwarded-Port %[dst_port]
+    http-request add-header X-Forwarded-Proto https if { ssl_fc }
+    option httpchk HEAD / HTTP/1.1\r\nHost:localhost
+    server web01 127.0.0.1:9000 check
+    server web02 127.0.0.1:9001 check
+    server web03 127.0.0.1:9002 check
+
+</pre>
+<p class="Para" id="Par214">最后三行是最重要的:它们转发到三个不同的本地 web 服务器。</p>
+<p>现在，我们需要一些东西来运行所有四个进程——ha proxy 和三个 web 服务器。在这个例子中，我们将使用<code>ncolony</code>。</p>
+<pre>$ alias add="python -m ncolony --messages /var/run/messages \
+                               --config /var/run config add"
+$ add --cmd haproxy --arg=-f --arg=/my/haproxy.cfg haproxy
+$ add --cmd python --arg=-m --arg=twisted \
+                   --arg=web --arg=--wsgi \
+                   --arg=wsgi_hello.application \
+                   --arg=--port --arg=tcp:9001 web1
+$ add --cmd python --arg=-m --arg=twisted \
+                   --arg=web --arg=--wsgi \
+                   --arg=wsgi_hello.application \
+                   --arg=--port --arg=tcp:9002 web2
+$ add --cmd python --arg=-m --arg=twisted \
+                   --arg=web --arg=--wsgi \
+                   --arg=wsgi_hello.application \
+                   --arg=--port --arg=tcp:9003 web3
+$ python -m twisted ncolony --messages /var/run/messages \
+                          --config /var/run config add
+
+
+
+</pre>
+
+<h3 class="Heading">以共享模式打开套接字</h3>
+<p class="Para" id="Par216">Linux 内核最近的一个特性是<code>SO_REUSEPORT</code>套接字选项。这允许几个服务器监听同一个端口。然而，由于这个特性是最近才出现的，Twisted 不支持开箱即用。</p>
+<p>为了利用它，我们将需要插入扭曲的更低的层。</p>
+<pre>import socket
+
+import attr
+
+from zope import interface
+
+from twisted.python import usage, threadpool
+from twisted import plugin
+from twisted.application import service, internet as tainternet
+from twisted.web import wsgi, server
+from twisted.internet import reactor, tcp, interfaces as tiinterfaces, defer
+
+import wsgi_hello
+
+@interface.implementer(tiinterfaces.IStreamServerEndpoint)
+@attr.s
+class ListenerWithReuseEndPoint(object):
+    port = attr.ib()
+    reactor = attr.ib(default=None)
+    backlog = attr.ib(default=50)
+    interface = attr.ib(default=“)
+
+    def listen(self, protocolFactory):
+        p = tcp.Port(self.port, protocolFactory, self.backlog, self.interface,
+                     self.reactor)
+        self._sock = sock = p.createInternetSocket()
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        sock.bind((self.interface, self.port))
+        sock.listen(self.backlog)
+        return defer.succeed(reactor.adoptStreamPort(sock.fileno(),
+                                                     p.addressFamily,
+                                                     protocolFactory))
+
+@interface.implementer(service.IServiceMaker, plugin.IPlugin)
+class ServiceMaker(object):
+    tapname = "twisted_book_reuseport"
+    description = "Reuse port"
+    class options(usage.Options): pass
+    def makeService(self, options):
+        application = wsgi_hello.application
+        pool = threadpool.ThreadPool(minthreads=1, maxthreads=100)
+        reactor.callWhenRunning(pool.start)
+        reactor.addSystemEventTrigger('after', 'shutdown', pool.stop)
+        root = wsgi.WSGIResource(reactor, pool, application)
+        site = server.Site(root)
+        endpoint = ListenerWithReuseEndPoint(8000)
+        service = tainternet.StreamServerEndpointService(endpoint, site)
+        return service
+serviceMaker = ServiceMaker()
+
+</pre>
+<p class="Para" id="Par218">这无疑是我们迄今为止编写的最复杂的插件。在生产代码中，这对一个插件来说太大了——当然大部分逻辑应该被分离出来。</p>
+<p>然而，为了便于说明，将所有代码放在一起显示可以使其更加清晰。</p>
+<pre>@interface.implementer(tiinterfaces.IStreamServerEndpoint)
+
+</pre>
+<p class="Para" id="Par220">模块名似乎很奇怪。Twisted 的深度模块层次结构意味着一些名称在层次结构中的不同点重复出现。一个有用的惯例是在导入模块时仍然保留层次结构中的一些字母，以使目的更加清晰。在这种情况下，<code>tiinterfaces</code>代表<code>twisted.internet.interfaces</code>。</p>
+<p>我们实现了<code>IStreamServerEndpoint</code>接口，因为我们需要实现一种新的端点——以<code>REUSEPORT</code>模式打开套接字的端点。</p>
+<pre>@attr.s
+
+</pre>
+<p>由于这个类有很多数据成员，我们使用<code>attrs</code>包来简化代码。</p>
+<pre>class ListenerWithReuseEndPoint(object):
+    port = attr.ib()
+    reactor = attr.ib(default=None)
+    backlog = attr.ib(default=50)
+    interface = attr.ib(default=")
+
+</pre>
+<p>我们接受与<code>reactor.listenTCP</code>调用完全相同的参数。这是故意的。</p>
+<pre>def listen(self, protocolFactory):
+
+</pre>
+<p>这是<code>IStreamServerEndpoint</code>接口中唯一的方法。</p>
+<pre>p = tcp.Port(self.port, protocolFactory, self.backlog, self.interface,
+             self.reactor)
+self._sock = sock = p.createInternetSocket()
+
+</pre>
+<p>Twisted 的底层 TCP 设施，在<code>tcp.Port</code>中，确保非阻塞的正确选项会设置在套接字上。我们保留了对 socket 对象的引用，以防止它被收集。这很重要，因为我们将从同一个文件描述符创建一个新的 Python 级别的套接字对象。</p>
+<pre>sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+
+</pre>
+<p>这是所有这些繁琐的事情的真正原因——设置<code>SO_REUSEPORT</code>选项。</p>
+<pre>sock.bind((self.interface, self.port))
+
+</pre>
+<p>我们绑定到接口。</p>
+<pre>sock.listen(self.backlog)
+
+</pre>
+<p>我们开始倾听。</p>
+<pre>return defer.succeed(reactor.adoptStreamPort(sock.fileno(),
+                                             p.addressFamily,
+                                             protocolFactory))
+
+</pre>
+<p class="Para" id="Par229">我们从 socket 对象中获取文件描述符，并允许 Twisted“采用”它。这将返回一个<code>IListeningPort</code>。由于<code>listen</code>的合同是返回延期的，我们将其包装在<code>defer.succeed</code>中。</p>
+<p>为了将这个投入生产，我们可以再次使用<code>ncolony</code>。</p>
+<pre>$ alias add="python -m ncolony --messages /var/run/messages \
+                               --config /var/run config add"
+$ add --cmd python --arg=-m --arg=twisteded \
+                   --arg=twisted_book_reuseport web1
+$ add --cmd python --arg=-m --arg=twisteded \
+                   --arg=twisted_book_reuseport web2
+$ add --cmd python --arg=-m --arg=twisteded \
+                   --arg=twisted_book_reuseport web3
+$ python -m twist ncolony --messages /var/run/messages \
+                          --config /var/run config add
+
+</pre>
+<p class="Para" id="Par231">和上一个例子一样，我们运行三个 web workers。请注意，这一次，所有三者的命令行都是相同的——不再需要负载平衡器。</p>
+
+<h3 class="Heading">其他选项</h3>
+<p class="Para" id="Par232">一般来说，Twisted 中还有一些其他的多处理选项。可以创建一个套接字，然后产生监听它的进程。这意味着以有些笨拙的方式捆绑流程管理和监听代码。例如，不再可能使用<code>ncolony</code>来监控流程，也不再可能使用<code>twisted.runner.procmon</code>来监控流程。如果“父”进程死亡，我们将面临一个两难的选择:是重启它，杀死所有现有的子进程，还是等待所有子进程先死亡。</p>
+<p class="Para" id="Par233">另一种选择是在一个进程中监听，然后通过 UNIX 域套接字传递文件描述符。这对于移植来说并不简单，并且需要深入研究套接字系统调用的奥秘。</p>
+<p class="Para" id="Par234">一般来说，端口重用或负载平衡的选项更好。请注意，与任何性能改进一样，特定选择的效果(例如端口重用与负载平衡)应该在尽可能接近生产环境的环境中进行测量。</p>
+
+
+<h2 class="Heading">动态配置</h2>
+<p class="Para" id="Par235">如前所述，使用 Twisted 作为 WSGI 服务器允许向应用程序添加控制通道，允许在运行时重新配置。这里我们展示了这种控制的完整示例，使用异步消息协议(AMP)作为我们的控制协议。该示例包括应用程序和控件应用程序。</p>
+<h3 class="Heading">A/B 可测试金字塔应用</h3>
+<p class="Para" id="Par236">A/B 测试意味着向一些用户展示 web 应用程序的一个版本，而向其他用户展示不同的版本——并检查各种指标的效果。例如，一个电子商务应用程序可能会尝试放置“Checkout”按钮，并测试它对多少客户结帐的影响。</p>
+<p class="Para" id="Par237">Python web 框架有许多全功能的 A/B 测试选项。这里我们没有足够的篇幅来编写一个全功能的替代方案，但是我们将展示其中的一个基本部分:改变输出。一般来说，向给定用户显示时，输出应该是恒定的，但是这需要一致的会话构造，这也超出了我们的范围。</p>
+<p class="Para" id="Par238">我们的“测试”将只是每个请求，决定显示哪个版本。我们将在随机选择的基础上这样做。然而，我们将采用 A/B 测试框架的一个重要特征——偏向选择。如果我们认为测试可能会对用户产生不利影响，我们通常会在很小的比例上运行它。</p>
+<p>我们的默认设置是对 0%的用户运行测试。我们将依靠外部机制来提高这些百分比。</p>
+<pre>import random
+
+from pyramid import config, response
+
+FEATURES = dict(capitalize=0.0, exclaim=0.0)
+
+def hello_world(request):
+    if random.random() &lt; FEATURES['capitalize']:
+         message = 'Hello world'
+     else:
+         message = 'hello world'
+     if random.random() &lt; FEATURES['exclaim']:
+        message += '!'
+    return response.Response(message)
+
+with config.Configurator() as conf:
+    conf.add_route('hello', '/')
+    conf.add_view(hello_world, route_name="hello")
+    application = conf.make_wsgi_app()
+
+</pre>
+<p>我们逐行检查新代码:</p>
+<pre>FEATURES = dict(capitalize=0.0, exclaim=0.0)
+
+</pre>
+<p class="Para" id="Par241">我们允许两个“特征”——<code>capitalize</code>，是否大写我们的问候；还有<code>exclaim</code>，是否加感叹号。注意，在这个例子中，这些特性是独立的:用户可以看到四种不同的问候。</p>
+<p>在小范围内，这是对进行 A/B 测试的实际环境的一个很好的模拟——从理论上讲，当运行<code>n</code>实验时，用户可以经常接触到任何<code>2**n</code>可能的选项。</p>
+<pre>if random.random() &lt; FEATURES['capitalize']:
+
+</pre>
+<p>这就是 Python 中一个所谓的“有偏向的抛硬币”的基本逻辑。会导致<code>True</code>平均约<code>FEATURES['capitalize']</code>。</p>
+<pre>message = 'Hello world'
+
+</pre>
+<p>大写消息。</p>
+<pre>else:
+    message = 'hello world'
+
+</pre>
+<p>小写消息。</p>
+<pre>if random.random() &lt; FEATURES['exclaim']:
+    message += '!'
+
+</pre>
+<p class="Para" id="Par246">如果感叹号打开，请添加感叹号。</p>
+
+<h3 class="Heading">带 AMP 的自定义插件</h3>
+<p>为了能够调整百分比，我们使用 AMP 协议。有许多可供选择的选项，但是这个平衡了灵活性和可论证性。一个好处是对 AMP 的支持内置在 Twisted 中，所以不需要第三方包。</p>
+<pre>from zope import interface
+
+from twisted.python import usage, threadpool
+from twisted import plugin
+from twisted.application import service, strports
+from twisted.web import wsgi, server
+from twisted.internet import reactor, protocol
+from twisted.protocols import amp
+
+import pyramid_dynamic
+
+class GetCapitalize(amp.Command):
+    arguments = []
+    response = [(b'value', amp.Float())]
+
+class GetExclaim(amp.Command):
+    arguments = []
+    response = [(b'value',  amp.Float())]
+
+class SetCapitalize(amp.Command):
+    arguments = [(b'value', amp.Float())]
+    response = []
+
+class SetExclaim(amp.Command):
+    arguments = [(b'value',  amp.Float())]
+    response = []
+
+class AppConfiguration(amp.CommandLocator):
+
+    @GetCapitalize.responder
+    def get_capitalize(self):
+        return {'value':  pyramid_dynamic.FEATURES['capitalize']} 
+
+
+
+
+
+
+    @GetExclaim.responder
+    def get_exclaim(self):
+        return {'value':  pyramid_dynamic.FEATURES['exclaim']}
+
+    @SetCapitalize.responder
+    def set_capitalize(self, value):
+        pyramid_dynamic.FEATURES['capitalize'] = value
+        return {}
+
+    @SetExclaim.responder
+    def set_exclaim(self, value):
+        pyramid_dynamic.FEATURES['exclaim'] = value
+        return {}
+
+@interface.implementer(service.IServiceMaker, plugin.IPlugin)
+class ServiceMaker(object):
+    tapname = "twisted_book_configure"
+    description = "WSGI for book"
+    class options(usage.Options):
+        pass
+    def makeService(self, options):
+        application = pyramid_dynamic.application
+        pool = threadpool.ThreadPool(minthreads=1, maxthreads=100)
+        reactor.callWhenRunning(pool.start)
+        reactor.addSystemEventTrigger('after', 'shutdown', pool.stop)
+        root = wsgi.WSGIResource(reactor, pool, application)
+        site = server.Site(root)
+        control = protocol.Factory()
+        control.protocol = lambda: amp.AMP(locator=AppConfiguration())
+        ret = service.MultiService()
+        strports.service('tcp:8000', site).setServiceParent(ret)
+        strports.service('tcp:8001', control).setServiceParent(ret) 
+
+
+
+
+
+        return ret
+serviceMaker = ServiceMaker()
+
+</pre>
+<p>我们将复习新代码:</p>
+<pre>class GetCapitalize(amp.Command):
+    arguments = []
+    response = [(b'value',  amp.Float())]
+
+class GetExclaim(amp.Command):
+    arguments = []
+    response = [(b'value',  amp.Float())]
+
+class SetCapitalize(amp.Command):
+    arguments = [(b'value',  amp.Float())]
+    response = []
+
+class SetExclaim(amp.Command):
+    arguments = [(b'value',  amp.Float())]
+    response = []
+
+</pre>
+<p class="Para" id="Par249">这些定义了 AMP <em class="EmphasisTypeItalic ">命令</em>。命令是 AMP 中的基本信息。虽然理论上，命令可以双向发送，但在大多数情况下，它们将从客户机发送到服务器。</p>
+<p class="Para" id="Par250">我们有意让 get/set 命令一次只允许一个字段，以便清楚地表明不保证原子性。事实上，由于在没有更多机制的情况下很难保证字典访问的原子性，所以在 API 中指出不可能同时将大写设置为 1 和<em class="EmphasisTypeItalic ">保证</em>为 0 是有用的。</p>
+<p>我们可以制作一个声明原子性的 API:例如，同时设置两个属性。我们甚至可以用原子的方式来实现它:例如，大规模替换<code>FEATURES</code>字典，这样就可以访问旧字典或新字典，并且没有中间步骤。然而，线程切换可能发生在线之间</p>
+<pre>if random.random() &lt; FEATURES['capitalize']:
+
+</pre>
+<p>那条线呢</p>
+<pre>if random.random() &lt; FEATURES['exclaim']:
+
+</pre>
+<p>这将使原子性的借口成为谎言。相反，我们选择明确表示更新不是原子性的，</p>
+<pre>class AppConfiguration(amp.CommandLocator):
+
+    @GetCapitalize.responder
+    def get_capitalize(self):
+        return {'value': pyramid_dynamic.FEATURES['capitalize']}
+
+    @GetExclaim.responder
+    def get_exclaim(self):
+        return {'value': pyramid_dynamic.FEATURES['exclaim']}
+
+    @SetCapitalize.responder
+    def set_capitalize(self, value):
+        pyramid_dynamic.FEATURES['capitalize'] = value
+        return {}
+
+    @SetExclaim.responder
+    def set_exclaim(self, value):
+        pyramid_dynamic.FEATURES['exclaim'] = value
+        return {}
+
+</pre>
+<p>我们编写一个简单的类，将命令连接到<code>pyramid_dynamic.FEATURES</code>字典，适当地设置和获取字段。</p>
+<pre>control = protocol.Factory()
+control.protocol = lambda: amp.AMP(locator=AppConfiguration())
+
+
+
+
+</pre>
+<p class="Para" id="Par255">控制工厂将协议设置为使用自定义定位器创建新的<code>amp.AMP</code>的函数。还有其他方法将 AMP 协议绑定到特定的定位器，但这将尽可能多的权力交给了集成者——编写插件的程序员，而不是编写命令处理本身的程序员。</p>
+
+<h3 class="Heading">控制程序</h3>
+<p>也许在其他地方，控制代码本身会使用同步风格并阻塞网络调用。然而，在本书中，这是一个展示如何使用 Twisted 编写客户端的机会。我们选择以一种与 Python 2 和 Python 3 都兼容的方式编写这段代码。</p>
+<pre>from twisted.internet import task, defer, endpoints, protocol
+from twisted.protocols import amp
+
+from twisted.plugins import twisted_book_configure
+
+@task.react
+@defer.inlineCallbacks
+def main(reactor):
+    endpoint = endpoints.TCP4ClientEndpoint(reactor, "127.0.0.1", 8001)
+    prot = yield endpoint.connect(protocol.Factory.forProtocol(amp.AMP))
+    res1 = yield prot.callRemote(twisted_book_configure.GetCapitalize)
+    res2 = yield prot.callRemote(twisted_book_configure.GetExclaim)
+    print(res1['value'],  res2['value'])
+    yield prot.callRemote(twisted_book_configure.SetCapitalize, value=0.5)
+    yield prot.callRemote(twisted_book_configure.SetExclaim, value=0.5)
+    res1 = yield prot.callRemote(twisted_book_configure.GetCapitalize)
+    res2 = yield prot.callRemote(twisted_book_configure.GetExclaim)
+    print(res1['value'],  res2['value'])
+@task.react
+
+</pre>
+<p>装饰器将立即运行主函数，并带有一个反应器参数。</p>
+<pre>@defer.inlineCallbacks
+
+</pre>
+<p>我们使用一个<code>inlineCallbacks</code>装饰器来允许代码更好地流动。</p>
+<pre>def main(reactor):
+
+</pre>
+<p>注意，这里我们接受<code>reactor</code>作为参数，而不是导入它。</p>
+<pre>endpoint = endpoints.TCP4ClientEndpoint(reactor, "127.0.0.1", 8001)
+
+</pre>
+<p>创建客户端端点。</p>
+<pre>prot = yield endpoint.connect(protocol.Factory.forProtocol(amp.AMP)) 
+
+
+
+
+</pre>
+<p>创建客户端工厂，并连接。</p>
+<pre>res1 = yield prot.callRemote(twisted_book_configure.GetCapitalize)
+res2 = yield prot.callRemote(twisted_book_configure.GetExclaim)
+
+</pre>
+<p>检索值。请注意，我们使用的是之前定义的命令类。</p>
+<pre>print(res1['value'], res2['value'])
+
+</pre>
+<p>显示更改前的值</p>
+<pre>yield prot.callRemote(twisted_book_configure.SetCapitalize, value=0.5)
+yield prot.callRemote(twisted_book_configure.SetExclaim, value=0.5)
+
+</pre>
+<p>设置值</p>
+<pre>res1 = yield prot.callRemote(twisted_book_configure.GetCapitalize)
+res2 = yield prot.callRemote(twisted_book_configure.GetExclaim)
+print(res1['value'],  res2['value'])
+
+</pre>
+<p class="Para" id="Par265">再去拿。这证明它们已经改变。</p>
+<p class="Para" id="Par266">这三个部分——应用程序、插件和控制程序——为我们提供了一个 web 服务器，我们可以动态配置其内部参数。</p>
+
+
+<h2 class="Heading">摘要</h2>
+<p class="Para" id="Par267">Twisted WSGI 服务器在开发中易于安装和使用——事实上，甚至比参考实现更容易。尽管使用方便，但它完全适合在生产中使用。为了避免开发环境和生产环境之间的差异——这种差异常常使生产问题难以重现，这种方法非常方便。</p>
+<p class="Para" id="Par268">由于它基于 Twisted Web 服务器，因此继承了生产级 TLS 实现等功能，这些功能支持 SNI 和 Let's Encrypt 等功能，以及 HTTP/2 协议支持。它还可以配置为静态文件 web 服务器，允许它从与动态应用程序相同的进程中提供静态资产，如图像、JavaScript 和 CSS 文件，从而避免静态资产与应用程序接受的内容不匹配。</p>
+<p class="Para" id="Par269">它没有定义任何配置文件格式。相反，对于任何比设置监听端口或命名 WSGI 应用程序更深层次的配置，都可以编写一个 Twisted 插件——它允许用一种语言进行最终配置，不管是什么 web 框架，所有从事应用程序工作的工程师都知道并使用这种语言。</p>
+<p class="Para" id="Par270">Twisted 作为 WSGI 容器的最大缺点是利用了多核机器。为此，可以通过几种不同的配置来建立多个 WSGI 流程。一般来说，将“如何监听套接字”与“如何管理多个进程”分开，可以为每个进程找到好的解决方案，而不是将进程管理和套接字代码绑定在一起。</p>
+
+
+</body>
+</html>

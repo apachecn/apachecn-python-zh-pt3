@@ -1,0 +1,576 @@
+<html lang="en">
+<head><title>Package Deployment</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">7.包部署</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">在前面的章节中，您已经看到了 Debian 软件包是如何构建的，如何插入到一个存储库中，以及如何将这个存储库配置为目标机器上的软件包源。有了这些准备工作，交互式安装实际的包就变得容易了。</p>
+<p>要安装<code>python-matheval</code>示例项目，运行</p>
+<pre>$ apt-get update
+$ apt-get install python-matheval
+
+</pre>
+<p class="Para" id="Par4">在目标机器上。</p>
+<p class="Para" id="Par5">如果需要多台计算机来提供服务，那么协调更新会很有好处，例如，一次只更新一台或两台主机，或者在转移到下一台主机后，在每台主机上进行一次小型集成测试。一个很好的工具是一个开源的 IT 自动化和配置管理系统。</p>
+<h2 class="Heading">7.1 可扩展:一级</h2>
+<p class="Para" id="Par7">Ansible 是一个非常实用和强大的配置管理系统，很容易上手。如果您已经熟悉 Ansible(或者选择使用不同的配置管理和部署系统)，您可以安全地跳过这一节。</p>
+<h3 class="Heading">连接和库存</h3>
+<p class="Para" id="Par8">Ansible 通常用于通过安全外壳(SSH)连接到一个或多个远程机器，并使它们进入所需的状态。连接方法是可插拔的。其他方法包括<code>local</code>，它只是调用本地机器上的命令，以及<code>docker</code>，它通过 Docker 守护进程连接以配置一个正在运行的容器。Ansible 称这些远程机器为<em class="EmphasisTypeItalic ">主机。</em></p>
+<p>要告诉 Ansible 在哪里以及如何连接，您需要编写一个<em class="EmphasisTypeItalic ">清单</em>或<em class="EmphasisTypeItalic ">主机</em>文件。在清单文件中，您可以定义主机和主机组，还可以设置控制如何连接到它们的变量(清单<a href="#PC2"> 7-1 </a>)。</p>
+<pre># example inventory file
+[all:vars]
+# variables set here apply to all hosts
+ansible_ssh_user=root
+
+[web]
+# a group of webservers
+
+
+
+www01.example.com
+www02.example.com
+
+[app]
+# a group of 5 application servers,
+# all following the same naming scheme:
+app[01:05].example.com
+
+
+
+[frontend:children]
+# a group that combines the two previous groups
+app
+web
+
+[database]
+# here we override ansible_ssh_user for just one host
+db01.example.com ansible_ssh_user=postgres
+
+Listing 7-1File myinventory: an Ansible Hosts File
+
+
+</pre>
+<p class="Para" id="Par10">详见<a href="http://docs.ansible.com/ansible/intro_inventory.html">库存档案介绍</a> <sup> <a epub:type="noteref" href="#Fn2" id="Fn2_source"> 2 </a> </sup>。</p>
+<p>要测试连接，您可以在命令行上使用<code>ping</code>模块。</p>
+<pre>$ ansible -i myinventory web -m ping
+www01.example.com | success &gt;&gt; {
+    "changed": false,
+    "ping": "pong"
+}
+
+www02.example.com | success &gt;&gt; {
+    "changed": false,
+    "ping": "pong"
+}
+
+</pre>
+<p class="Para" id="Par13">让我们将命令行分成几个部分。<code>-i myinventory</code>告诉 Ansible 使用<code>myinventory</code>文件作为库存。<code>web</code>告诉 Ansible 在哪个主机上工作。它可以是一个组，如本例所示，也可以是单个主机，或者是几个这样的东西，用冒号隔开。例如，<code>www01.example.com:database</code>将选择一个 web 服务器和所有数据库服务器。</p>
+<p class="Para" id="Par14">最后，<code>-m ping</code>告诉 Ansible 执行哪个模块。<code>ping</code>大概是最简单的模块。它只是发送响应<code>"pong"</code>，而不在远程机器上进行任何更改，它主要用于调试库存文件和凭证。</p>
+<p class="Para" id="Par15">这些命令在不同的主机上并行运行，因此打印响应的顺序可能会有所不同。如果在连接到主机时出现问题，在命令行中添加选项<code>-vvvv</code>，以获得更多输出，包括来自 SSH 的任何错误消息。</p>
+<p class="Para" id="Par16">Ansible 隐式地为您提供了组<code>all</code>，您猜对了，它包含清单文件中配置的所有主机。</p>
+
+<h3 class="Heading">模块</h3>
+<p>每当你想通过 Ansible 在主机上做一些事情时，你就调用一个模块来完成它。模块通常接受指定应该发生什么的参数。在命令行上，您可以用<code>ansible -m module –a 'arguments'</code>添加这些参数。例如:</p>
+<pre>$ ansible -i myinventory database -m shell -a 'echo "hi there"'
+db01.example.com | success | rc=0 &gt;&gt;
+hi there
+
+</pre>
+<p class="Para" id="Par18">Ansible 提供了丰富的内置模块和第三方模块生态系统。大多数模块都是<em class="EmphasisTypeItalic ">幂等的</em>，这意味着在第一次运行之后，使用相同的参数重复执行不会带来任何变化。例如，不是指示 Ansible 创建一个目录，而是指示它确保该目录存在。第一次运行这样的指令会创建目录，第二次运行它不会做任何事情，但仍然会报告成功。</p>
+<p class="Para" id="Par19">在这里，我想介绍几个常用的模块。</p>
+
+<h3 class="Heading">外壳模块</h3>
+<p><a href="http://docs.ansible.com/ansible/shell_module.html"> <code>shell</code>模块</a> <sup> <a epub:type="noteref" href="#Fn3" id="Fn3_source"> 3 </a> </sup>在主机上执行一个 shell 命令，并接受一些选项，如<code>chdir</code>，在运行命令之前，切换到另一个工作目录。</p><pre>$ ansible -i myinventory database -m shell -e 'pwd chdir=/tmp'
+db01.example.com | success | rc=0 &gt;&gt;
+/tmp
+
+</pre>
+
+<p class="Para" id="Par22">这很普通，但也是最后的选择。如果手头的任务有更具体的模块，您应该更喜欢更具体的模块。例如，您可以使用<code>shell</code>模块来确保系统用户的存在，但是更专业的<a href="http://docs.ansible.com/ansible/user_module.html">用户模块</a> <sup> <a epub:type="noteref" href="#Fn4" id="Fn4_source"> 4 </a> </sup>更易于使用，并且可能比临时编写的 shell 脚本做得更好。</p>
+
+<h3 class="Heading">复制模块</h3>
+<p>用<a href="http://docs.ansible.com/ansible/copy_module.html"> <code>copy</code> </a>、<sup> <a epub:type="noteref" href="#Fn5" id="Fn5_source"> 5 </a> </sup>可以将文件从本地一字不差地复制到远程机器上。</p><pre>$ ansible -i myinventory database -m copy \
+     -a 'src=README.md dest=/etc/motd mode=644 db01.example.com' | success &gt;&gt; {
+    "changed": true,
+    "dest": "/etc/motd",
+    "gid": 0,
+    "group": "root",
+    "md5sum": "d41d8cd98f00b204e9800998ecf8427e",
+    "mode": "0644",
+    "owner": "root",
+    "size": 0,
+    "state": "file",
+    "uid": 0
+
+
+}
+
+
+
+
+</pre>
+
+
+<h3 class="Heading">模板模块</h3>
+<p class="Para" id="Par26"><a href="http://docs.ansible.com/ansible/template_module.html"> <code>template</code> </a> <sup> <a epub:type="noteref" href="#Fn6" id="Fn6_source"> 6 </a> </sup>的工作方式大多与<code>copy</code>类似，但它在将源文件传输到远程主机之前，会将其解释为<a href="http://jinja.pocoo.org/docs/dev/"> Jinja2 模板</a>、<sup> <a epub:type="noteref" href="#Fn7" id="Fn7_source"> 7 </a> </sup>。这通常用于创建配置文件和合并来自变量的信息(稍后将详细介绍)。</p>
+<p>模板不能直接从命令行使用，而是在行动手册中使用，因此这里有一个简单的行动手册示例。</p>
+<pre># file motd.j2
+This machine is managed by {{team}}.
+
+# file template-example.yml
+---
+- hosts: all
+  vars:
+    team: Slackers
+  tasks:
+   - template: src=motd.j2 dest=/etc/motd mode=0644
+
+</pre>
+<p class="Para" id="Par30">稍后将在行动手册中详细介绍，但是您可以看到，这定义了一个变量<code>team</code>，将其设置为值<code>Slackers</code>，并且模板对该变量进行插值。</p>
+<p>运行行动手册</p>
+<pre>$ ansible-playbook -i myinventory \
+    --limit database template-example.yml
+
+</pre>
+<p>在数据库服务器上创建一个包含内容的文件<code>/etc/motd</code></p>
+<pre>This machine is managed by Slackers.
+
+</pre>
+
+<h3 class="Heading">文件模块</h3>
+<p><a href="http://docs.ansible.com/ansible/file_module.html"><code>file</code>模块</a> <sup> <a epub:type="noteref" href="#Fn8" id="Fn8_source"> 8 </a> </sup>管理着文件名的属性，比如权限，还可以让你创建目录和软硬链接。</p><pre>$ ansible -i myinventory database -m file \
+    -a 'path=/etc/apt/sources.list.d
+            state=directory mode=0755'
+db01.example.com | success &gt;&gt; {
+    "changed": false,
+    "gid": 0,
+    "group": "root",
+    "mode": "0755",
+    "owner": "root",
+    "path": "/etc/apt/sources.list.d",
+    "size": 4096,
+    "state": "directory",
+    "uid": 0
+}
+
+
+
+</pre>
+
+
+<h3 class="Heading">apt 模块</h3>
+<p class="Para" id="Par35">在 Debian 和衍生发行版(比如 Ubuntu)上，安装和移除软件包通常是由来自<code>apt</code>家族的软件包管理器来完成的，比如<code>apt-get</code>、<code>aptitude</code>，而在更新的版本中，则直接由<code>apt</code>二进制文件来完成。</p>
+<p><a href="http://docs.ansible.com/ansible/apt_module.html"> <code>apt</code>模块</a> <sup> <a epub:type="noteref" href="#Fn9" id="Fn9_source"> 9 </a> </sup>从 Ansible 内部对此进行管理。</p><pre>$ ansible -i myinventory database -m apt \
+    -a 'name=screen state=present update_cache=yes'
+db01.example.com | success &gt;&gt; {
+    "changed": false
+}
+
+</pre>
+
+<p class="Para" id="Par38">这里已经安装了<code>screen</code>包，所以模块没有改变系统的状态。</p>
+<p class="Para" id="Par39">单独的模块可用于<a href="http://docs.ansible.com/ansible/apt_key_module.html">管理 apt-keys </a> <sup> <a epub:type="noteref" href="#Fn10" id="Fn10_source"> 10 </a> </sup>，利用这些模块对存储库进行密码验证，以及<a href="http://docs.ansible.com/ansible/apt_repository_module.html">管理存储库本身</a>。<sup> <a epub:type="noteref" href="#Fn11" id="Fn11_source"> 11 </a> </sup></p>
+
+<h3 class="Heading">yum 和 zypper 模块</h3>
+<p class="Para" id="Par42">对于基于 RPM 的 Linux 发行版，可以使用<a href="http://docs.ansible.com/ansible/yum_module.html"> <code>yum</code> </a> <sup> <a epub:type="noteref" href="#Fn12" id="Fn12_source"> 12 </a> </sup>和<a href="http://docs.ansible.com/ansible/zypper_module.html"> <code>zypper</code>模块</a> <sup> <a epub:type="noteref" href="#Fn13" id="Fn13_source"> 13 </a> </sup>(在编写本文时，处于预览状态)。他们通过同名的包管理器来管理包的安装。</p>
+
+<h3 class="Heading">包装模块</h3>
+<p class="Para" id="Par45"><a href="http://docs.ansible.com/ansible/package_module.html"> <code>package</code>模块</a> <sup> <a epub:type="noteref" href="#Fn14" id="Fn14_source"> 14 </a> </sup>使用它检测到的任何包管理器。因此，它比<code>apt</code>和<code>yum</code>模块更通用，但支持的功能要少得多。例如，在<code>apt</code>的情况下，它不提供在做其他事情之前是否运行<code>apt-get update</code>的任何控制。</p>
+
+<h3 class="Heading">特定应用模块</h3>
+<p class="Para" id="Par47">到目前为止，所展示的模块与系统非常接近，但是也有一些模块用于实现常见的特定于应用程序的任务。例子包括<a href="http://docs.ansible.com/ansible/list_of_database_modules.html">处理</a> <a href="http://docs.ansible.com/ansible/list_of_database_modules.html">与数据库</a>，<sup>T5】15</sup><a href="http://docs.ansible.com/ansible/list_of_network_modules.html">网络相关的东西比如代理</a>，<sup> <a epub:type="noteref" href="#Fn16" id="Fn16_source"> 16 </a> </sup> <a href="http://docs.ansible.com/ansible/list_of_source_control_modules.html">版本控制系统</a>，<sup> <a epub:type="noteref" href="#Fn17" id="Fn17_source"> 17 </a> </sup> <a href="http://docs.ansible.com/ansible/kubernetes_module.html">集群解决方案比如 Kubernetes </a>，<sup> <a epub:type="noteref" href="#Fn18" id="Fn18_source"> 18 </a> </sup>等等。</p>
+
+<h3 class="Heading">剧本</h3>
+<p class="Para" id="Par52">行动手册可以包含以定义的顺序对模块的多次调用，并将其执行限制在单个主机或一组主机上。它们以<a href="http://yaml.org/"> YAML 文件格式</a> <sup> <a epub:type="noteref" href="#Fn19" id="Fn19_source"> 19 </a> </sup>编写，这是一种为人类可读性而优化的数据序列化文件格式。</p>
+<p>这里有一个样例剧本(清单<a href="#PC12"> 7-2 </a>)安装了最新版本的<code>go-agent</code> Debian 包，即<a href="https://www.gocd.org/"> Go 连续交付</a> (GoCD)的工作器。<sup> <a epub:type="noteref" href="#Fn20" id="Fn20_source"> 20 </a> </sup></p><pre>---
+ - hosts: go-agent
+   vars:
+     go_server: go-server.example.com
+   tasks:
+   - apt: package=apt-transport-https state=present
+   - apt_key:
+        url: https://download.gocd.org/GOCD-GPG-KEY.asc
+        state: present
+        validate_certs: no
+   - apt_repository:
+        repo: 'deb https://download.gocd.org /'
+        state: present
+   - apt: update_cache=yes package={{item}} state=present
+     with_items:
+      - go-agent
+      - git
+      - build-essential
+   - lineinfile:
+        dest: /etc/default/go-agent
+        regexp: ^GO_SERVER=
+        line: GO_SERVER={{ go_server }}
+   - copy:
+       src: files/guid.txt
+       dest: /var/lib/go-agent/config/guid.txt
+       user: go
+       group: go
+   - service: name=go-agent enabled=yes state=started
+
+Listing 7-2An Ansible Playbook
+
+for Installing a GoCD Agent on a Debian-Based System
+
+
+</pre>
+
+<p>该文件中的顶级元素是一个单元素列表。单个元素以<code>hosts: go-agent</code>开始，这将执行限制到组<code>go-agent</code>中的主机。这是附带的清单文件的相关部分:</p>
+<pre>
+[go-agent]
+
+go-worker01.p6c.org
+go-worker02.p6c.org
+
+</pre>
+<p class="Para" id="Par57">然后，它将变量<code>go_server</code>设置为一个字符串，这里是运行 GoCD 服务器的主机名。</p>
+<p>最后是剧本的核心部分:要执行的任务列表。每个任务都是对一个模块的调用，其中一些已经讨论过了。以下是一个快速概述。</p><ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par59">首先，<code>apt</code>安装 Debian 包<code>apt-transport-https</code>，以确保系统可以通过 HTTPS 从 Debian 仓库获取元数据和文件。</p></li>
+<li><p class="Para" id="Par60">接下来的两个任务使用<a href="http://docs.ansible.com/ansible/apt_repository_module.html"> <code>apt_repository</code> </a> <sup> <a epub:type="noteref" href="#Fn21" id="Fn21_source"> 21 </a> </sup>和<a href="http://docs.ansible.com/ansible/apt_key_module.html"><code>apt_key</code></a><sup><a epub:type="noteref" href="#Fn22" id="Fn22_source">22</a></sup>模块来配置将从其中安装实际<code>go-agent</code>包的存储库。</p></li>
+<li><p class="Para" id="Par63">另一个对<code>apt</code>的调用安装了所需的包。此外，一些更多的软件包安装了一个<a href="http://docs.ansible.com/ansible/playbooks_loops.html">循环结构</a>。<sup> <a epub:type="noteref" href="#Fn23" id="Fn23_source"> 23 </a> </sup></p></li>
+<li><p class="Para" id="Par65"><a href="http://docs.ansible.com/ansible/lineinfile_module.html"> <code>lineinfile</code>模块</a> <sup> <a epub:type="noteref" href="#Fn24" id="Fn24_source"> 24 </a> </sup>通过 regex(正则表达式)在文本文件中搜索一行，并用预定义的内容替换它找到的行。这里，我们使用它来配置代理连接到的 GoCD 服务器。</p></li>
+<li><p class="Para" id="Par67">最后，<a href="http://docs.ansible.com/ansible/service_module.html"> <code>service</code> </a> <sup> <a epub:type="noteref" href="#Fn25" id="Fn25_source"> 25 </a> </sup>模块启动代理，如果它还没有运行(<code>state=started</code>)，并确保它在重新引导时自动启动(<code>enabled=yes</code>)。</p></li>
+</ul>
+
+
+<p class="Para" id="Par69">使用<code>ansible-playbook</code>命令调用剧本，例如<code>ansible-playbook -i inventory go-agent.yml</code>。</p>
+<p>一个行动手册中可以有多个任务列表，当它们影响不同的主机组时，这是一个常见的用例。</p>
+<pre>---
+- hosts: go-agent:go-server
+  tasks:
+    - apt: package=apt-transport-https state=present
+    - apt_key:
+        url: https://download.gocd.org/GOCD-GPG-KEY.asc
+        state: present
+        validate_certs: no
+    - apt_repository:
+        repo: 'deb https://download.gocd.org /'
+        state: present
+
+- hosts: go-agent
+
+
+  tasks:
+    - apt: update_cache=yes package={{item}} state=present
+      with_items:
+       - go-agent
+       - git
+       - build-essential
+     - ...
+
+- hosts: go-server
+
+
+
+  tasks:
+    - apt: update_cache=yes package={{item}} state=present
+    - apt: update_cache=yes package=go-server state=present
+    - ...
+
+</pre>
+
+<h3 class="Heading">变量</h3>
+<p>变量对于控制剧本中的流程和填充模板中的点以生成配置文件都很有用。有几种方法可以设置变量。一种方法是通过<code>vars: ...</code>直接在剧本中设置它们，如前所述。另一种方法是在命令行中指定它们。</p>
+<pre>ansible-playbook --extra-vars=variable=value theplaybook.yml
+
+</pre>
+<p class="Para" id="Par72">第三种非常灵活的方法是使用<code>group_vars</code>特性。对于主机所在的每个组，Ansible 查找文件<code>group_vars/thegroup.yml</code>和匹配<code>group_vars/thegroup/*.yml</code>的文件。一个主机可以同时属于几个组，这为您提供了额外的灵活性。</p>
+<p>例如，您可以将每台主机分为两组，一组用于主机所扮演的角色(如 web 服务器、数据库服务器、DNS 服务器等。)，另一个用于其所处的环境(测试、试运行、生产)。下面是一个使用这种布局的小例子。</p>
+<pre># environments
+[prod]
+www[01:02].example.com
+db01.example.com
+
+[test]
+db01.test.example.com
+www01.test.example.com
+
+# functional roles
+[web]
+www[01:02].example.com
+www01.test.example.com
+
+[db]
+db01.example.com
+db01.test.example.com
+
+</pre>
+<p>要仅配置测试主机，您可以运行</p>
+<pre>ansible-playbook --limit test theplaybook.yml
+
+</pre>
+<p class="Para" id="Par75">并将特定于环境的变量放在<code>group_vars/test.yml</code>和<code>group_vars/prod.yml</code>中，将特定于 web 服务器的变量放在<code>group_vars/web.yml</code>中，等等。</p>
+<p>您可以在变量中使用嵌套的数据结构，如果这样做，您可以配置 Ansible 来合并这些数据结构，如果它们在几个源中被指定的话。您可以通过创建一个名为<code>ansible.cfg</code>的文件进行配置，其内容如下:</p>
+<pre>
+[defaults]
+
+hash_behavior=merge
+
+</pre>
+<p>这样，您可以拥有一个设置默认值的文件<code>group_vars/all.yml</code></p>
+<pre># file group_vars/all.yml
+myapp:
+    domain: example.com
+    db:
+        host: db.example.com
+        username: myappuser
+        instance. myapp
+
+</pre>
+<p>然后覆盖该嵌套数据结构的单个元素，例如在<code>group_vars/test.yml</code>中，如下所示:</p>
+<pre># file group_vars/test.yml
+myapp:
+    domain: test.example.com
+    db:
+        hostname: db.test.example.com
+
+</pre>
+<p class="Para" id="Par79"><code>test</code>组变量文件没有触及的键，例如<code>myapp.db.username</code>，是从<code>all.yml</code>文件继承的。</p>
+
+<h3 class="Heading">角色</h3>
+<p class="Para" id="Par80">角色是将剧本的各个部分封装成可重用组件的一种方式。让我们考虑一个导致简单角色定义的真实例子。</p>
+<p>对于部署软件，您通常希望部署刚刚构建的确切版本，因此行动手册的相关部分是</p>
+<pre>- apt:
+    name: thepackage={{package_version}}
+    state: present
+    update_cache: yes
+    force: yes
+
+</pre>
+<p class="Para" id="Par82">但是这需要您在运行剧本时提供<code>package_version</code>变量。当您不运行新构建软件的部署，而是配置一台新机器，并且必须安装几个软件包，每个软件包都有自己的剧本时，这将是不实际的。</p>
+<p>因此，我们将代码一般化，以处理缺少版本号的情况。</p>
+<pre>- apt:
+    name: thepackage={{package_version}}
+    state: present
+    update_cache: yes
+    force: yes
+  when: package_version is defined
+- apt: name=thepackage state=present update_cache=yes
+  when: package_version is undefined
+
+</pre>
+<p class="Para" id="Par84">如果您将几个这样的行动手册包含在一个中，并在同一台主机上运行它们，您可能会注意到，它大部分时间都在为每个包含的行动手册运行<code>apt-get update</code>。</p>
+<p>第一次更新<code>apt</code>缓存是必要的，因为在部署之前，您可能刚刚在您的本地 Debian 镜像上上传了一个新的包，但是后续的运行是不必要的。因此，您可以将主机已经为其缓存更新的信息存储在一个<a href="https://docs.ansible.com/ansible/set_fact_module.html"> <em class="EmphasisTypeItalic ">事实</em> </a> <em class="EmphasisTypeItalic ">，</em> <sup> <a epub:type="noteref" href="#Fn26" id="Fn26_source"> 26 </a> </sup>中，这是 Ansible 中一种基于主机的变量。</p><pre>- apt: update_cache=yes
+  when: apt_cache_updated is undefined
+
+- set_fact:
+    apt_cache_updated: true
+
+</pre>
+
+<p class="Para" id="Par87">正如你所看到的，明智地安装一个包的代码库已经增长了一些，是时候把它分解成一个<em class="EmphasisTypeItalic ">角色</em>了。</p>
+<p>角色是具有预定义名称的 YAML 文件的集合。命令</p>
+<pre>$ mkdir roles
+$ cd roles
+$ ansible-galaxy init custom_package_installation
+
+</pre>
+<p>为名为<code>custom_package_installation</code>的角色创建一个空框架。之前放在所有剧本中的任务现在放在角色主目录下的文件<code>tasks/main.yml</code>(清单<a href="#PC25"> 7-3 </a>)中。</p>
+<pre>- apt: update_cache=yes
+  when: apt_cache_updated is undefined
+- set_fact:
+    apt_cache_updated: true
+
+- apt:
+    name: {{package}={{package_version}}
+    state: present
+    update_cache: yes
+    force: yes
+  when: package_version is defined
+- apt: name={{package} state=present update_cache=yes
+  when: package_version is undefined
+
+Listing 7-3File roles/custom_package_installation/tasks/main.yml
+
+
+</pre>
+<p>要使用该角色，请将其包含在行动手册中，如下所示:</p>
+<pre>---
+- hosts: web
+  pre_tasks:
+     - # tasks that are executed before the role(s)
+  roles:
+     role: custom_package_installation
+     package: python-matheval
+  tasks:
+    - # tasks that are executed after the role(s)
+
+</pre>
+<p class="Para" id="Par91"><code>pre_tasks</code>和<code>tasks</code>是可选的。只包含角色的剧本就可以了。</p>
+<p class="Para" id="Par92">Ansible 有更多的功能，如处理程序，允许您在任何更改后只重新启动服务一次，更灵活的服务器环境的动态清单，<a href="http://docs.ansible.com/ansible/playbooks_vault.html">加密变量的保险库</a>，<sup> <a epub:type="noteref" href="#Fn27" id="Fn27_source"> 27 </a> </sup>，以及用于管理常见应用程序和中间件的现有角色的丰富生态系统。</p>
+<p class="Para" id="Par94">关于 Ansible 的更多内容，我强烈推荐优秀的书籍<em class="EmphasisTypeItalic "> Up and Running，</em> 2nd ed。，<a href="https://www.amazon.com/dp/1491979801/">作者洛林·霍赫斯坦</a>(奥赖利传媒，2017)。</p>
+
+
+<h2 class="Heading">7.2 使用 Ansible 部署</h2>
+<p>有了上一节的 Ansible 知识，部署就成了一项简单的任务。我们从环境的单独清单文件开始(清单<a href="#PC27"> 7-4 </a>)。</p>
+<pre>[web]
+www01.yourorg.com
+www02.yourorg.com
+
+[database]
+db01.yourorg.com
+
+[all:vars]
+ansible_ssh_user=root
+
+Listing 7-4Ansible Inventory File production
+
+
+</pre>
+<p>也许测试环境只需要一台 web 服务器(清单<a href="#PC28"> 7-5 </a>)。</p>
+<pre>[web]
+www01.testing.yourorg.com
+
+[database]
+db01.stagingyourorg.com
+
+[all:vars]
+ansible_ssh_user=root
+
+Listing 7-5Ansible Inventory File testing
+
+
+</pre>
+<p>在测试环境中的 web 服务器上安装包<code>python-matheval</code>现在是一行程序。</p>
+<pre>$ ansible -i testing web -m apt -a 'name=python-matheval update_cache=yes state=latest'
+
+</pre>
+<p>一旦您开始使用 Ansible 进行部署，您可能还想使用它来执行其他配置管理任务，因此为您想要部署的每个包编写一个行动手册是有意义的。这里有一个(清单<a href="#PC30"> 7-6 </a>)使用了本章前面“角色”一节中的包安装角色。</p>
+<pre>---
+- hosts: web
+  roles:
+    role: custom_package_installation
+    package: python-matheval
+
+Listing 7-6File deploy-python-matheval.yml: Deployment Playbook for Package python-matheval
+
+
+</pre>
+<p>然后，您可以像这样调用它</p>
+<pre>$ ansible-playbook -i testing deploy-python-matheval.yml
+
+</pre>
+
+<h2 class="Heading">7.3 总结</h2>
+<p class="Para" id="Par100">Ansible 可以为您安装软件包，但它还可以做更多的事情。它可以配置操作系统和应用程序，甚至在几台机器上协调流程。</p>
+<p class="Para" id="Par101">通过编写一个清单文件，你告诉 Ansible 它控制哪些机器。行动手册指定要做什么，使用模块来完成单个任务，例如创建用户或安装软件。</p>
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par6"><a href="http://www.ansible.com/"> <code>www.ansible.com/</code> </a>。</p>
+
+ 
+
+<a href="#Fn2_source">2</a><p class="Para" id="Par11"><a href="http://docs.ansible.com/ansible/intro_inventory.html"> <code>http://docs.ansible.com/ansible/intro_inventory.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn3_source">3</a><p class="Para" id="Par21"><a href="http://docs.ansible.com/ansible/shell_module.html"> <code>http://docs.ansible.com/ansible/shell_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn4_source">4</a><p class="Para" id="Par23"><a href="http://docs.ansible.com/ansible/user_module.html"> <code>http://docs.ansible.com/ansible/user_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn5_source">5</a><p class="Para" id="Par25"><a href="http://docs.ansible.com/ansible/copy_module.html"> <code>http://docs.ansible.com/ansible/copy_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn6_source">6</a><p class="Para" id="Par27"><a href="http://docs.ansible.com/ansible/template_module.html"> <code>http://docs.ansible.com/ansible/template_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn7_source">7</a><p class="Para" id="Par28"><a href="http://jinja.pocoo.org/docs/dev/"> <code>http://jinja.pocoo.org/docs/dev/</code> </a>。</p>
+
+ 
+
+<a href="#Fn8_source">8</a><p class="Para" id="Par34"><a href="http://docs.ansible.com/ansible/file_module.html"> <code>http://docs.ansible.com/ansible/file_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn9_source">9</a><p class="Para" id="Par37"><a href="http://docs.ansible.com/ansible/apt_module.html"> <code>http://docs.ansible.com/ansible/apt_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn10_source">10</a><p class="Para" id="Par40"><a href="http://docs.ansible.com/ansible/apt_key_module.html"> <code>http://docs.ansible.com/ansible/apt_key_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn11_source">11</a><p class="Para" id="Par41"><a href="http://docs.ansible.com/ansible/apt_repository_module.html"> <code>http://docs.ansible.com/ansible/apt_repository_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn12_source">12</a><p class="Para" id="Par43"><a href="http://docs.ansible.com/ansible/yum_module.html"> <code>http://docs.ansible.com/ansible/yum_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn13_source">13</a><p class="Para" id="Par44"><a href="http://docs.ansible.com/ansible/zypper_module.html"> <code>http://docs.ansible.com/ansible/zypper_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn14_source">14</a><p class="Para" id="Par46"><a href="http://docs.ansible.com/ansible/package_module.html"> <code>http://docs.ansible.com/ansible/package_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn15_source">15</a><p class="Para" id="Par48"><a href="http://docs.ansible.com/ansible/list_of_database_modules.html"> <code>http://docs.ansible.com/ansible/list_of_database_modules.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn16_source">16</a><p class="Para" id="Par49"><a href="http://docs.ansible.com/ansible/list_of_network_modules.html"> <code>http://docs.ansible.com/ansible/list_of_network_modules.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn17_source">17</a><p class="Para" id="Par50"><a href="http://docs.ansible.com/ansible/list_of_source_control_modules.html"> <code>http://docs.ansible.com/ansible/list_of_source_control_modules.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn18_source">18</a><p class="Para" id="Par51"><a href="http://docs.ansible.com/ansible/kubernetes_module.html"> <code>http://docs.ansible.com/ansible/kubernetes_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn19_source">19</a><p class="Para" id="Par53"><a href="http://yaml.org/"> <code>http://yaml.org/</code> </a>。</p>
+
+ 
+
+<a href="#Fn20_source">20</a><p class="Para" id="Par55"><a href="http://www.gocd.org/"> <code>www.gocd.org/</code> </a>。</p>
+
+ 
+
+<a href="#Fn21_source">21</a><p class="Para" id="Par61"><a href="http://docs.ansible.com/ansible/apt_repository_module.html"> <code>http://docs.ansible.com/ansible/apt_repository_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn22_source">22</a><p class="Para" id="Par62"><a href="http://docs.ansible.com/ansible/apt_key_module.html"> <code>http://docs.ansible.com/ansible/apt_key_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn23_source">23</a><p class="Para" id="Par64"><a href="http://docs.ansible.com/ansible/playbooks_loops.html"> <code>http://docs.ansible.com/ansible/playbooks_loops.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn24_source">24</a><p class="Para" id="Par66"><a href="http://docs.ansible.com/ansible/lineinfile_module.html"> <code>http://docs.ansible.com/ansible/lineinfile_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn25_source">25</a><p class="Para" id="Par68"><a href="http://docs.ansible.com/ansible/service_module.html"> <code>http://docs.ansible.com/ansible/service_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn26_source">26</a><p class="Para" id="Par86"><a href="https://docs.ansible.com/ansible/set_fact_module.html"> <code>https://docs.ansible.com/ansible/set_fact_module.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn27_source">27</a><p class="Para" id="Par93"><a href="http://docs.ansible.com/ansible/playbooks_vault.html"> <code>http://docs.ansible.com/ansible/playbooks_vault.html</code> </a>。</p>
+
+ 
+
+</aside>
+
+</body>
+</html>

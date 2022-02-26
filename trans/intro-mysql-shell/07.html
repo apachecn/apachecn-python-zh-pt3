@@ -1,0 +1,2007 @@
+<html lang="en">
+<head><title>Example: Document Store Development</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">7.示例:文档存储开发</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">现在我们已经有了 JSON 的坚实基础，并且已经了解了如何使用 MySQL Shell 开发关系数据库代码，我们准备开始编写示例应用程序的 NoSQL 版本。</p>
+<p class="Para" id="Par3">正如您将看到的，应用程序从纯关系模型到文档模型的演变演示了我们如何避免使用关系数据的一些混乱方面。可能会让您感到惊讶的一个因素是，文档存储(NoSQL)版本代码的复杂性降低，使代码更容易理解。还有什么更好的理由来考虑使用 MySQL 文档库编写未来的应用程序呢？</p>
+<p class="Para" id="Par4">在上一章中，我们通过创建一个或多个 JSON 列，并使用 JSON 函数在 JSON 文档中创建、操作、搜索和访问数据，探索了如何在关系数据库中使用 JSON 数据。</p>
+<p class="Para" id="Par5">在本章中，我们使用 MySQL 文档库将 garage 示例应用程序(关系数据库解决方案)迁移到一个纯 NoSQL 应用程序<sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source"> 1 </a> </sup>。我们可以通过 Python 使用许多 X DevAPI 特性来做到这一点——所有这些都是在 MySQL Shell 的帮助下开发的！让我们开始吧。</p>
+<h2 class="Heading">入门指南</h2>
+<p class="Para" id="Par7">我们没有把文档存储的解释留在最后一章，而是用例子来支持它，解释使用文档存储通过代码处理数据的新方法的好处。我们将以互动的方式演示这些概念，以便通过示例来证明这些概念，而不是简单地展示它是如何实现的。在本节中，我们将了解一个致力于此的示例应用程序——证明如何使用 shell 来开发自己的文档存储。</p>
+<p class="Para" id="Par8">然而，为了以这种方式展示 shell 的全部功能，样本必须足够复杂，具有足够的深度(和宽度)来完成它的角色。因此，对于这一章，我们将使用第<a href="05.html"> 5 </a>章中的 garage 示例应用程序作为起点，并将其迁移到文档存储中。</p>
+<p class="Para" id="Par9">回想一下，示例应用程序是一个工具，您可以用它来组织车库或车间中的工具。然而，与关系数据库实现不同，我们将对数据采取稍微不同的观点。我们开始吧。</p>
+<h3 class="Heading">示例应用程序概念</h3>
+<p class="Para" id="Par10">就像我们在第<a href="05.html"> 5 </a>章看到的示例应用程序一样，这个示例应用程序完全是关于组织的。在第 5 章<a href="05.html"/>中，数据是以大多数关系数据库专家使用的典型方式组织的——他们构建表格来保存具有相同布局的东西，或者简单地说，表格代表数据的主要类别。回想一下，我们有放手动工具、电动工具、储物空间等的桌子。–所有你能在车库或车间找到的东西。</p>
+<p class="Para" id="Par11">对于 garage 应用程序的这个版本，我们将把我们的关注点从将相似的东西组织成表，转变为通过集合来组织东西。例如，工具箱包含工具，存储单元包含箱子、盒子、箱子等。这似乎是一个非常细微的差别(也许确实如此)，但它改变了数据的整个焦点。我们可以打开工具箱或查看搁架单元，看看那里存放了什么工具，而不是通过寻找工具来找到它的存放位置。通过这种方式，我们创造了一个更加用户友好的版本。现在，我们模仿大多数人寻找工具时的做法——一次打开一个抽屉(你知道你也会这么做)。</p>
+<p class="Para" id="Par12">这是文档存储的优势之一——数据固有的灵活性允许您选择想要使用(或需要)的视图，并使数据及其访问层工作。这是一个挑战，一些关系数据库应用程序失败得很惨。<sup> <a epub:type="noteref" href="#Fn2" id="Fn2_source"> 2 </a> </sup></p>
+<p class="Para" id="Par14">此外，与关系数据库版本不同，我们为每个主要存储设备创建集合，并在表示存储设备的文档中维护每个设备(例如，工具)的内容列表。我们将所有工具归入一个集合，并通过文档 id 在存储设备集合中引用它们。同样，这听起来可能很奇怪，但是随着您的阅读，您将会看到它是如何工作的。</p>
+<p>在此之前，让我们花点时间来看看这个版本的示例应用程序的修改后的用户界面。我们将这个应用程序命名为<code>mygarage_v2</code>。由于我们将模式设计的重点放在了存储设备上，因此我们在用户界面中的视图将从这个角度来看。我们保留了列表视图的概念，只是我们为每个存储设备使用了主要部分。图<a href="#Fig1"> 7-1 </a>显示了一个显示工具箱细节视图的新界面示例。</p>
+<p><img alt="../images/478423_1_En_7_Chapter/478423_1_En_7_Fig1_HTML.jpg" src="../images/478423_1_En_7_Chapter/478423_1_En_7_Fig1_HTML.jpg" style="width:37.5em"/></p>
+<p>图 7-1</p><p class="SimplePara">工具箱详细视图</p>
+
+
+<h3 class="Heading">注意</h3>
+<p class="Para" id="Par16">当使用文档存储或 NoSQL 模型时，我们使用“模式”,对于关系数据库模型，我们使用“数据库”。</p>
+
+<p class="Para" id="Par17">请注意，这里我们看到了工具箱的详细信息，以及每个存放位置(抽屉、架子)和其中的工具列表。虽然我们可以对关系数据库版本采用类似的视图，<sup> <a epub:type="noteref" href="#Fn3" id="Fn3_source"> 3 </a> </sup>但是文档存储使得编码变得相当容易。</p>
+<h3 class="Heading">小费</h3>
+<p class="Para" id="Par19">我们不会解释示例应用程序的每一个细微差别，而是将重点放在最适合用来证明使用 shell 开发代码的实用性的部分——模式集合代码模块。</p>
+
+<p>与关系数据库版本不同，该版本背后的代码易于理解，并且在某些方面不太复杂。但是在我们看到模式设计之前，让我们在下面的列表中讨论一下这个版本的应用程序中使用的集合。这将帮助您理解与关系数据库版本(版本 1)的区别。</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par21"><em class="EmphasisTypeItalic ">橱柜:</em>带门的储物设备，可能有一个或多个搁板，用于存放各种工具和收纳件</p></li>
+<li><p class="Para" id="Par22"><em class="EmphasisTypeItalic ">工具箱:</em>有零个或多个架子和一个或多个抽屉的存储设备——用于存储较小的工具</p></li>
+<li><p class="Para" id="Par23"><em class="EmphasisTypeItalic ">工作台:</em>有一个或多个架子和零个或多个抽屉的存储设备——用于存储较大的工具</p></li>
+<li><p class="Para" id="Par24"><em class="EmphasisTypeItalic ">搁架单元:</em>没有门和一个或多个搁架的存储设备——用于存储较大的箱子和类似的组织者</p></li>
+<li><p class="Para" id="Par25"><em class="EmphasisTypeItalic ">组织者:</em>可以容纳一个或多个工具但需要存放在存储设备中的容器</p></li>
+<li><p class="Para" id="Par26"><em class="EmphasisTypeItalic ">工具:</em>手动和电动工具</p></li>
+<li><p class="Para" id="Par27"><em class="EmphasisTypeItalic ">供应商:</em>工具和设备的制造商</p></li>
+</ul>
+
+<p class="Para" id="Par28">注意这里有一点词汇上的变化。在应用程序的第一个版本中，我们使用单数形式的表名。文档存储通常使用复数，因为每个集合通常包含多个项目(文档)。此外，当使用文档存储时，我们应该始终使用术语“模式”,而不是“数据库”。虽然有些人认为它们是同义词，但是 X DevAPI 做出了明确的区分，所以我们将采用相同的方法，使用术语“模式”。</p>
+<p class="Para" id="Par29">你可能想知道我们怎样才能得到工具箱和工具之间的联系，就像前面提到的那样。这是通过简单地将工具的文档 id 和每个存储位置(重命名为工具位置)存储在工具箱文档中来实现的。</p>
+<p>清单<a href="#PC1"> 7-1 </a>是一个样本清单，可以帮助形象化地展示如何为<code>organizers</code>系列完成这项工作。正如您将看到的，我们使用 shell 连接到模式，然后获取集合，并按照文档 id 键值获取工具列表(名为<code>tool_ids</code>的数组)。这类似于在关系数据库中查找东西，但是在这种情况下，我们不必编写特殊的 SQL 命令(或者更糟，邪恶的 SQL 连接)来获取数据。稍后我们将更多地讨论那些<code>_id</code>字段。</p>
+<pre>&gt; garage_v2 = my_session.get_schema('garage_v2')
+&gt; tc = garage_v2.get_collection('toolchests')
+&gt; tc.find().execute().fetch_one()
+{
+    "_id": "00005cc33db4000000000000025f",
+    "depth": 22,
+    "description": "Kobalt 3000 Steel Rolling Tool Cabinet (Black)",
+    "height": 54,
+    "location": "Rear wall right of workbench",
+    "tool_locations": [
+        "00005cc33db40000000000000260",
+        "00005cc33db40000000000000261",
+        "00005cc33db40000000000000268"
+    ],
+    "vendorid": "00005cc33db40000000000000130",
+    "width": 48
+}
+&gt; locs = garage_v2.get_collection('locations')
+&gt; locs.find('_id = :param1').bind('param1', '00005cc33db40000000000000260').execute().fetch_one()
+{
+    "_id": "00005cc33db40000000000000260",
+    "depth": 17,
+    "description": "Left 1",
+    "height": 2,
+    "tool_ids": [
+        "00005cc33db40000000000000146",
+        "00005cc33db40000000000000147",
+        "00005cc33db40000000000000148",
+        "00005cc33db40000000000000149",
+        "00005cc33db4000000000000014a",
+        "00005cc33db4000000000000015a"
+    ],
+    "type": "Drawer",
+    "width": 21
+}
+
+
+
+
+Listing 7-1Sample Toolchest JSON Document
+
+
+</pre>
+<p class="Para" id="Par31">此时，您可能想知道 JSON 文档的无忧无虑的无格式规则功能发生了什么变化。简而言之，它仍然存在，但是我们的代码要求每个文档都有一组特定的属性。正如您将看到的，我们定义的属性将在代码中直接用来访问文档中的代码。</p>
+<p class="Para" id="Par32">这并不排除使用可以随时添加的附加属性，但是它要求您的代码支持这样的更改。这就是以代码为中心的无模式嵌入式数据设计(或简单的代码驱动数据)的含义。随着应用程序的发展，我们可以使用我们的代码来扩充我们的文档(和集合)。</p>
+<p class="Para" id="Par33">例如，如果我们将来需要添加一个新属性，我们可以添加代码来处理呈现的新数据，这必须包括如何处理没有新属性的文档，但也可能包括根据需要将属性添加到旧文档的代码。与需要修改表的关系数据库应用程序不同，关系数据库应用程序会迫使代码发生变化(可能是以不愉快的方式)，我们可以让文档存储的代码来实现这些变化。一切都归结于代码。</p>
+<p class="Para" id="Par34">让我们进一步讨论模式设计以及如何将关系数据库迁移到文档存储中。</p>
+
+<h3 class="Heading">模式设计</h3>
+<p>您可能会认为我们可以使用 MySQL Workbench 这样的工具来创建模式和集合(您可以这样做),就像您创建关系数据库一样，但是您不需要这样做。您应该使用代码来执行创建事件。更具体地说，如果您要将文档存储的模式导入到 MySQL Workbench 这样的工具中，您不会看到太多感兴趣的内容。这是因为 SQL 模式下的 MySQL Shell(或 Workbench)将集合视为数据库。例如，清单<a href="#PC2"> 7-2 </a>显示了这个版本的示例应用程序(garage_v2)的数据库(模式)的<code>CREATE TABLE</code>语句。</p>
+<pre>&gt; EXPLAIN toolchests \G
+∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗ 1. row ∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗
+  Field: doc
+   Type: json
+   Null: YES
+    Key:
+Default: NULL
+  Extra:
+∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗ 2. row ∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗
+  Field: _id
+   Type: varbinary(32)
+   Null: NO
+    Key: PRI
+Default: NULL
+  Extra: STORED GENERATED
+2 rows in set (0.0025 sec)
+
+Listing 7-2Sample CREATE statement from SQL for garage_v2.
+
+
+</pre>
+<p class="Para" id="Par36">很明显，这是行不通的，它只不过是一种暂时的兴趣。请注意 _id 字段。这是文档 id。</p>
+<p class="Para" id="Par37">当使用文档存储时，我们使用代码来创建模式和集合。回想一下，我们想要将模式命名为<code>garage_v2</code>并创建集合(<code>cabinets</code>、<code>toolchests</code>、<code>workbenches</code>、<code>shelving units</code>、<code>organizers</code>、<code>tools</code>和<code>vendors</code>)。我们还有一个名为<code>locations</code>的集合，它将各种类型的存储位置(称为工具位置)存储为一个文档，如架子、抽屉等。<code>locations</code>集合不能从用户界面的主菜单访问，因为焦点在存储设备集合上。但是，每个存储设备详细视图允许您修改该存储设备的工具位置，以完成该集合的创建、读取、更新和删除(CRUD)操作。</p>
+<p>我们将使用 shell 和 X DevAPI 来创建这些对象，如清单<a href="#PC3"> 7-3 </a>所示。注意，我们首先连接到服务器，请求会话，然后创建模式和集合。就这样——我们的模式完成了，我们有了文档存储的基础！</p>
+<pre>from getpass import getpass
+try:
+    input = raw_input
+except NameError:
+    pass
+# Get user id and password
+userid = input("User Id: ")
+passwd = getpass("Password: ")
+
+user_info = {
+    'host': 'localhost',
+    'port': 33060,
+    'user': userid,
+    'password': passwd,
+}
+# Connect to the database garage_v1
+my_session = mysqlx.get_session(user_info)
+# Create the schema for garage_v2
+my_session.drop_schema('garage_v2')
+garage_v2 = my_session.create_schema('garage_v2')
+# Create the collections
+cabinets = garage_v2.create_collection('cabinets')
+organizers = garage_v2.create_collection('organizers')
+shelving_units = garage_v2.create_collection('shelving_units')
+tools = garage_v2.create_collection('tools')
+toolchests = garage_v2.create_collection('toolchests')
+locations = garage_v2.create_collection('locations')
+workbenches = garage_v2.create_collection('workbenches')
+vendors = garage_v2.create_collection('vendors')
+# Show the collections
+print(garage_v2.get_collections())
+
+Listing 7-3Creating the Document Store
+
+
+</pre>
+<p>当您运行代码时，您应该会看到如下所示的输出。</p>
+<pre>&gt; mysqlsh --py -f listing7-3.py
+User Id: root
+Password: ∗∗∗∗∗∗∗∗∗∗∗
+[&lt;Collection:cabinets&gt;, &lt;Collection:locations&gt;, &lt;Collection:organizers&gt;, &lt;Collection:shelving_units&gt;, &lt;Collection:toolchests&gt;, &lt;Collection:tools&gt;, &lt;Collection:vendors&gt;, &lt;Collection:workbenches&gt;]
+
+</pre>
+<p class="Para" id="Par40">这难道不比苦读一堆 SQL <code>CREATE</code>语句容易得多吗？如果你想从头开始创建模式和集合，你可以在你的机器上运行这个，但是如果你把我们在第<a href="05.html"> 5 章</a>中看到的数据从一个关系数据库转换到一个文档存储，你可能想按照<em class="EmphasisTypeItalic ">设置和配置</em>部分中的例子转换。</p>
+<p class="Para" id="Par41">在此之前，让我们再来谈谈这些系列。这一次，我们将看到每个集合的样本文档。</p>
+<h3 class="Heading">注意</h3>
+<p class="Para" id="Par42">我们使用“工具位置”来代替版本 1 中“存储位置”的概念，以便区分和更好地描述 JSON 文档中的属性。</p>
+
+<h4 class="Heading">橱柜系列</h4>
+<p><code>cabinets</code>集合存储描述橱柜的文档，橱柜可以包含一个或多个搁板和一个或多个门。因此，我们希望存储集合中每个橱柜的信息，包括它的物理大小和位置，以及它包含的工具位置(架子)。清单<a href="#PC5"> 7-4 </a>展示了这个集合中的一个 JSON 文档示例。</p>
+<pre>&gt; garage_v2 = my_session.get_schema('garage_v2')
+&gt; cabinets = garage_v2.get_collection('cabinets')
+&gt; cabinets.find().execute().fetch_one()
+{
+    "_id": "00005cae74150000000000000161",
+    "depth": 24,
+    "description": "Kobalt Steel Freestanding Garage Cabinet",
+    "height": 72,
+    "location": "Right wall",
+    "numdoors": 2,
+    "tool_locations": [
+        "00005cae74150000000000000162",
+        "00005cae74150000000000000163",
+        "00005cae74150000000000000164",
+        "00005cae74150000000000000165",
+        "00005cae74150000000000000166"
+    ],
+    "vendorid": "00005cae74150000000000000001",
+    "width": 48
+}
+
+Listing 7-4Cabinets Collection Example JSON Document
+
+
+</pre>
+<p class="Para" id="Par44">注意我们有一个名为<code>_id</code>的属性。当我们创建文档时，我们没有指定这个属性，如果您没有指定，MySQL 将为您创建一个唯一的值。这称为文档 id。如果需要，您可以为<code>_id</code>指定自己的值，但是通常不鼓励这样做，因为内部机制将确保文档是惟一的。把它想象成一个主键。<sup> <a epub:type="noteref" href="#Fn4" id="Fn4_source"> 4 </a> </sup>有关文档 id 的更多信息，请参见<a href="https://dev.mysql.com/doc/x-devapi-userguide/en/working-with-document-ids.html"> <code>https://dev.mysql.com/doc/x-devapi-userguide/en/working-with-document-ids.html</code> </a>。</p>
+<p class="Para" id="Par46">我们还为描述、大小(深度、高度、宽度)、物理位置、门的数量和工具位置的数组添加了属性。最后，注意我们有一个包含供应商文档 id 的属性。请注意，<code>tool_locations</code>数组没有施加任何限制，比如只允许使用盘架。这是因为在文档存储中，这些类型的约束被添加到代码中。文档存储只是存储文档。</p>
+<h3 class="Heading">注意</h3>
+<p class="Para" id="Par47">在 JSON 文档中，我们对集合和属性使用小写名称。这不是绝对必要的，但确实遵循一种熟悉的模式。</p>
+
+
+<h4 class="Heading">位置集合</h4>
+<p><code>locations</code>集合存储描述工具存储位置的文档，如架子或抽屉。也就是说，我们希望存储关于集合中每个位置的信息，包括它的物理大小和位置，以及它包含的工具位置(架子或抽屉)。清单<a href="#PC6"> 7-5 </a>展示了这个集合中的一个示例 JSON 文档。</p>
+<pre>&gt; garage_v2 = my_session.get_schema('garage_v2')
+&gt; locations = garage_v2.get_collection('locations')
+&gt; locations.find().execute().fetch_one()
+{
+    "_id": "00005cae74150000000000000146",
+    "depth": 17,
+    "description": "Left 1",
+    "height": 2,
+    "tool_ids": [
+        "00005cae74150000000000000141",
+        "00005cae74150000000000000142",
+        "00005cae74150000000000000139"
+    ],
+    "type": "Drawer",
+    "width": 21
+}
+
+Listing 7-5Locations Collection Example JSON Document
+
+
+</pre>
+<p class="Para" id="Par49">注意，我们有一个工具 id 数组，它是存储在这个位置的每个工具的文档 id。还要注意，我们有一个 type 属性来存储刀具位置的类型。对这些值的控制也被转移到代码中，这允许您通过代码来更改允许的类型，而不是修改底层数据存储，这可能会在开发和发布期间造成额外的麻烦。</p>
+<h3 class="Heading">等等，为什么不把工具放在工具箱里？</h3>
+<p class="Para" id="Par50">一些文档存储开发人员可能会告诉您，使用单独的集合并通过 id 引用文档是不好的。他们会说，“只需将所有工具作为一个数组转储到存储设备集合中，不要弄乱位置集合。”这是一种有效的设计选择，但是数据中的一些严格性(例如以这种方式提取刀具位置到刀具的映射)同样有效，并且在某些情况下可能会使数据的转换更容易完成和可视化。我们将在本章后面看到这样一个例子。是的，JSON 可以让你把所有的东西放在一起，但是在数据组织上有一点严格性并不能验证 NoSQL 的目标。不要被愚弄，认为没有严谨就等同于更好的 NoSQL 设计。</p>
+
+
+<h4 class="Heading">组织者收藏</h4>
+<p><code>organizers</code>集合存储描述组织者的文档，如箱子、盒子、盒子等。，它可以包含一个或多个工具。因此，我们希望存储集合中每个组织者的信息，包括其物理大小和位置，以及它包含的工具。清单<a href="#PC7"> 7-6 </a>展示了这个集合中的一个示例 JSON 文档。</p>
+<pre>&gt; garage_v2 = my_session.get_schema('garage_v2')
+&gt; organizers = garage_v2.get_collection('organizers')
+&gt; organizers.find().execute().fetch_one()
+{
+    "_id": "00005cae7415000000000000013b",
+    "depth": 14,
+    "description": "SAE/Metric Socket Set",
+    "height": 4,
+    "tool_ids": [
+        "00005cae741500000000000000b2",
+        "00005cae741500000000000000b9",
+        "00005cae741500000000000000c7"
+    ],
+    "type": "Case",
+    "width": 12
+}
+
+Listing 7-6Organizers Collection Example JSON Document
+
+
+</pre>
+<p class="Para" id="Par52">像 locations 集合一样，我们也有一个在代码中控制的 type 属性。除此之外，我们还添加了描述其物理大小和描述的属性。还有一个工具 id 数组。这就是我们所需要的。</p>
+<p class="Para" id="Par53">对于示例应用程序，这里有一点需要注意。因为组织器可以很小，所以它们可以放置在工具位置。因此，应用程序需要额外的代码来处理查找，以区分组织者和工具。这是在应用程序中考虑灵活性的一个例子。关系数据库设计永远不会允许这样做，因为类型(组织者与工具位置)是不同的。因为我们用代码控制数据接口，所以我们需要做的就是编写代码来处理这种情况！我们将在下一节的代码设计中看到更多。</p>
+
+<h4 class="Heading">搁架单元系列</h4>
+<p><code>shelving_units</code>集合存储描述搁架单元的文档，搁架单元可以包含一个或多个架子。因此，我们希望存储关于集合中每个搁架单元的信息，包括它的物理大小和位置，以及它包含的工具位置(搁架)。清单<a href="#PC8"> 7-7 </a>展示了这个集合中的一个 JSON 文档示例。</p>
+<pre>&gt; garage_v2 = my_session.get_schema('garage_v2')
+&gt; shelving_units = garage_v2.get_collection('shelving_units')
+&gt; shelving_units.find().execute().fetch_one()
+{
+    "_id": "00005cae7415000000000000014f",
+    "depth": 24,
+    "description": "Wire shelving #1",
+    "height": 72,
+    "location": "Right wall",
+    "tool_locations": [
+        "00005cae74150000000000000150",
+        "00005cae74150000000000000152",
+        "00005cae74150000000000000153"
+    ],
+    "vendorid": "00005cae74150000000000000015",
+    "width": 48
+}
+
+Listing 7-7Shelving Units Collection Example JSON Document
+
+
+</pre>
+<p class="Para" id="Par55">你开始看到这里的趋势了吗？是的，存储设备系列具有非常相似的属性。这是有意的。为什么呢？因此，我们可以将文档隔离到离散的集合中，使集合变浅(更少的文档)。诚然，这将导致一个非常小的性能问题，但使用。随着应用程序的成熟或发展，它还允许您更改每个集合中的属性集。</p>
+<p class="Para" id="Par56">例如，如果添加一种新型的搁架单元，它有门、抽屉、工具架等等，您可以更改代码来处理新添加的内容，而无需重做集合中的任何文档，也无需对其他集合强制进行更改。</p>
+<p class="Para" id="Par57">回想一下，在关系数据库版本中，我们有一个用于存储门数量的字段，并不是所有存储设备类型都需要它。JSON 文档是这个 SQL 难题的答案。</p>
+
+<h4 class="Heading">工具箱系列</h4>
+<p><code>toolchests</code>集合存储描述工具箱的文档，工具箱可以包含零个或多个架子和一个或多个抽屉。因此，我们希望存储集合中每个工具箱的信息，包括它的物理大小和位置，以及它包含的工具位置(架子和抽屉)。清单<a href="#PC9"> 7-8 </a>展示了这个集合中的一个 JSON 文档示例。</p>
+<pre>&gt; garage_v2 = my_session.get_schema('garage_v2')
+&gt; toolchests = garage_v2.get_collection('toolchests')
+&gt; toolchests.find().execute().fetch_one()
+{
+    "_id": "00005cae74150000000000000145",
+    "depth": 22,
+    "description": "Kobalt 3000 Steel Rolling Tool Cabinet (Black)",
+    "height": 54,
+    "location": "Rear wall right of workbench",
+    "tool_locations": [
+        "00005cae74150000000000000146",
+        "00005cae74150000000000000147",
+        "00005cae7415000000000000014e"
+    ],
+    "vendorid": "00005cae74150000000000000001",
+    "width": 48
+}
+
+
+
+
+Listing 7-8Toolchests Collection Example JSON Document
+
+
+</pre>
+
+<h4 class="Heading">工具集合</h4>
+<p><code>tools</code>集合存储描述工具的文档。我们将包括所有工具；不仅仅是手动工具或电动工具。我们在文档中存储了每个工具的特性，如描述、类别、大小等。清单<a href="#PC10"> 7-9 </a>展示了这个集合中的一个示例 JSON 文档。</p>
+<pre>&gt; garage_v2 = my_session.get_schema('garage_v2')
+&gt; tools = garage_v2.get_collection('tools')
+&gt; tools.find().execute().fetch_one()
+{
+    "_id": "00005cae74150000000000000024",
+    "category": "Handtool",
+    "description": "1/8-in X 1-1/2-in",
+    "size": "Slotted",
+    "type": "Screwdriver",
+    "vendorid": "00005cae74150000000000000002"
+}
+
+Listing 7-9Tools Collection Example JSON Document
+
+
+</pre>
+<p class="Para" id="Par60">关于这个系列有一点需要注意。回想一下，我们在版本 1 的关系数据库中有两个表，因为一些字段有惟一的枚举值。因为 JSON 允许我们存储我们想要的属性，所以这个集合中的文档可能有也可能没有一个或多个属性。例如，并非所有工具都有大小属性。像其他集合一样，类别和类型的值在代码中处理。</p>
+
+<h4 class="Heading">供应商集合</h4>
+<p><code>vendors</code>集合存储描述供应商的文档。我们在版本 1 的关系数据库中存储了相同的特征，包括名称、来源和 URL。清单<a href="#PC11"> 7-10 </a>展示了这个集合中的一个示例 JSON 文档。</p>
+<pre>&gt; garage_v2 = my_session.get_schema('garage_v2')
+&gt; vendors = garage_v2.get_collection('vendors')
+ MySQL  Py &gt; vendors.find().execute().fetch_one()
+{
+    "_id": "00005cae74150000000000000001",
+    "name": "Kobalt",
+    "sources": "Lowes",
+    "url": "https://www.kobalttools.com/"
+}
+
+Listing 7-10Vendors Collection Example JSON Document
+
+
+</pre>
+
+<h4 class="Heading">工作台集合</h4>
+<p><code>workbenches</code>集合存储描述工作台的文档，工作台可以包含零个或多个货架。因此，我们希望存储集合中每个工作台的信息，包括它的物理大小和位置，以及它包含的工具位置(架子)。清单 7-11 展示了这个集合中的一个 JSON 文档示例。</p>
+<pre>&gt; garage_v2 = my_session.get_schema('garage_v2')
+&gt; workbenches = garage_v2.get_collection('workbenches')
+&gt; workbenches.find().execute().fetch_one()
+{
+    "_id": "00005cae74150000000000000167",
+    "depth": 24,
+    "description": "Large metal workbench",
+    "height": 42,
+    "location": "Rear wall",
+    "tool_locations": [
+        "00005cae74150000000000000168",
+        "00005cae74150000000000000169",
+        "00005cae7415000000000000016a"
+    ],
+    "vendorid": "00005cae74150000000000000002",
+    "width": 72
+}
+
+Listing 7-11Workbenches Collection Example JSON Document
+
+
+</pre>
+<p class="Para" id="Par63">现在我们已经看到了集合是如何形成的，让我们看看如何使用 shell 来编写实现集合的 CRUD 操作所需的代码。</p>
+
+
+<h3 class="Heading">代码设计</h3>
+<p>示例应用程序的代码与版本 1 中的代码非常相似；这是一个 Python Flask 应用程序，具有组织代码模块的相同选择。与版本 1 一样，您可能会发现有些事情您会做得不同，但出于演示的目的，它仍然可以以当前的形式使用。为示例应用程序做出的代码设计选择包括以下内容。</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par65">将 Flask 框架用于基于 web 的界面。</p></li>
+<li><p class="Para" id="Par66">使用一个类来表示数据库中的每个表。</p></li>
+<li><p class="Para" id="Par67">将单个类放在它自己的代码模块中。</p></li>
+<li><p class="Para" id="Par68">将所有模式代码模块放在它自己的文件夹(名为 schema)中。</p></li>
+<li><p class="Para" id="Par69">使用类封装到数据库服务器的连接。</p></li>
+<li><p class="Para" id="Par70">使用类模块测试每个表/视图类。</p></li>
+<li><p class="Para" id="Par71">使用从 shell 运行的代码模块来测试类模块。</p></li>
+</ul>
+
+<p class="Para" id="Par72">我们将在演示中看到这些约束中的大部分。如前所述，用户界面的描述包含在附录中。</p>
+<p class="Para" id="Par73">幸运的是，我们已经通过使用文档存储使编写代码变得稍微容易了一些。这是因为集合允许您指定属性，所以除了为有效值列表(关系数据库版本中的枚举列)添加约束和检查错误之外，创建、读取、更新和删除(CRUD)的代码是相同的。因此，我们将使用带有基类的对象层次结构，该基类包含 CRUD 操作的主要代码，并允许子类添加特定于每个集合的约束代码。</p>
+<p>让我们花点时间列出我们将使用的代码模块。在这个示例应用程序中，我们将创建一个名为 schema 的文件夹，并将以下模块放在该文件夹中。然后，我们可以根据需要在应用程序代码中导入它们。表<a href="#Tab1"> 7-1 </a>显示了所需的代码模块。</p>
+<p>表 7-1</p><p class="SimplePara">模式代码模块</p>
+
+
+<table style="border-collapse: collapse;border-top: 0.5pt solid ; border-bottom: 0.5pt solid ; border-left: 0.5pt solid ; border-right: 0.5pt solid ; "><colgroup><col class="tcol1 align-left"/>
+<col class="tcol2 align-left"/>
+<col class="tcol3 align-left"/>
+</colgroup>
+<thead><tr><th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">代码模块</p>
+</th>
+<th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">类别名</p>
+</th>
+<th style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">描述</p>
+</th>
+</tr>
+</thead>
+<tbody><tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>garage_v2</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>MyGarage</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">实现与服务器和通用服务器接口的连接</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>garage_collection</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>GarageCollection</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">所有集合类的基类</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>cabinets.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Cabinets</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">为橱柜系列建模</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>locations.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Locations</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">对位置集合建模</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>organizers.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Organizers</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">模拟组织者集合</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>shelving_units.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>ShelvingUnits</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">对 shelving_units 集合进行建模</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>toolchests.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Toolchests</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">为工具箱系列建模</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>tools.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Tools</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">对工具集合建模</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>vendors.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Vendors</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">对供应商集合建模</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>workbenches.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Workbenches</code></p>
+</td>
+<td style="text-align: left;"><p class="SimplePara">对工作台集合建模</p>
+</td>
+</tr>
+</tbody>
+</table>
+
+<p class="Para" id="Par75">当我们为示例应用程序编写代码以使用这些代码模块时，我们将使用<code>MyGarage</code>类连接到数据库服务器，并且当被请求时，使用与每个集合相关联的类来调用每个集合上的 CRUD 操作。</p>
+<p class="Para" id="Par76">现在，我们已经了解了示例应用程序及其设计的目标，让我们开始编写示例应用程序的模式代码。</p>
+
+
+<h2 class="Heading">设置和配置</h2>
+<p class="Para" id="Par77">以下演示的设置不需要安装任何东西，甚至不需要使用示例应用程序，相反，我们只需要加载示例模式，因为我们将只使用模式代码模块。虽然图像用于描述示例应用程序的某些方面，但在本章中并不一定需要它。同样，关于如何设置和使用完整的示例应用程序，请参见附录。</p>
+<p class="Para" id="Par78">由于我们在第<a href="05.html"> 5 </a>章中使用了来自示例应用程序的相同数据，我们将看看如何将关系数据库数据转换成文档存储。之后，我们将看到如何为基类和集合类编写代码。</p>
+<h3 class="Heading">将关系数据转换为文档存储</h3>
+<p class="Para" id="Par79">我们可以将关系数据库转换成文档存储，而不是从头开始。如果您还没有运行第 5 章中的示例应用程序，并且您想了解转换是如何工作的，那么您可以首先运行本书源代码中的<code>Ch05/mygarage/database/garage_v1.sql</code>文件，然后跟随我们了解如何将数据库表转换为集合以及将数据转换为文档。即使您不打算使用示例应用程序，本节也可以帮助您将来将其他数据库转换为文档存储。</p>
+<p class="Para" id="Par80">我们将采取逐步的方法来形成一个脚本来转换数据。这是因为有几个挑战会使转换代码变得有点棘手。幸运的是，当我们检查转换数据所必需的代码时，我们将遍历每一个。从关系数据库转换到文档存储的挑战在于如何将数据传递到新的集合中。这意味着在尝试转换之前，您必须计划您的收藏以及您希望如何使用它们。否则，随着模式设计的成熟，您可能会发现自己需要重新编写转换代码。<sup> <a epub:type="noteref" href="#Fn5" id="Fn5_source"> 5 </a> </sup></p>
+<p>将示例应用程序(版本 1)转换为文档存储的挑战包括以下内容。</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par83">我们不能使用自动增量值。因此，我们需要创建一个从旧的自动增量值到新的文档 id 的映射。</p></li>
+<li><p class="Para" id="Par84">我们将手动工具和电动工具合并为一个系列。</p></li>
+<li><p class="Para" id="Par85">我们将存储表分割成单独的集合。</p></li>
+<li><p class="Para" id="Par86">我们必须遍历位置表，并在新的集合中保留工具位置。</p></li>
+</ul>
+
+<p class="Para" id="Par87">让我们从第一步开始，即转换代码的前同步码或设置。如果您计划将您自己的关系数据库转换为文档存储，您可以使用一组类似的步骤来编写您自己的转换代码，但是您可能不需要所有的步骤。</p>
+<h4 class="Heading">步骤 1:转换设置代码</h4>
+<p>这一步很简单。我们只需导入我们需要的模块，然后连接到服务器，获得一个<code>garage_v1</code>数据库的实例，并创建<code>garage_v2</code>模式和集合，就像我们之前在清单<a href="#PC3"> 7-3 </a>中所做的那样。清单<a href="#PC13"> 7-12 </a>显示了设置转换脚本的代码。</p>
+<pre>import json
+from getpass import getpass
+try:
+    input = raw_input
+except NameError:
+    pass
+
+try:
+    import mysqlx
+except Exception:
+    from mysqlsh import mysqlx
+
+# Get user id and password
+userid = input("User Id: ")
+passwd = getpass("Password: ")
+
+user_info = {
+    'host': 'localhost',
+    'port': 33060,
+    'user': userid,
+    'password': passwd,
+}
+
+# Connect to the database garage_v1
+my_session = mysqlx.get_session(user_info)
+garage_v1 = my_session.get_schema('garage_v1')
+# Get the tables
+handtool_tbl = garage_v1.get_table('handtool')
+organizer_tbl = garage_v1.get_table('organizer')
+place_tbl = garage_v1.get_table('place')
+powertool_tbl = garage_v1.get_table('powertool')
+storage_tbl = garage_v1.get_table('storage')
+vendor_tbl = garage_v1.get_table('vendor')
+
+# Create the schema for garage_v2
+my_session.drop_schema('garage_v2')
+garage_v2 = my_session.create_schema('garage_v2')
+# Create the collections
+cabinets = garage_v2.create_collection('cabinets')
+organizers = garage_v2.create_collection('organizers')
+shelving_units = garage_v2.create_collection('shelving_units')
+tools = garage_v2.create_collection('tools')
+toolchests = garage_v2.create_collection('toolchests')
+locations = garage_v2.create_collection('locations')
+workbenches = garage_v2.create_collection('workbenches')
+vendors = garage_v2.create_collection('vendors')
+
+
+
+
+Listing 7-12Conversion Setup Code
+
+
+</pre>
+
+<h4 class="Heading">步骤 2:助手函数</h4>
+<p>下一步需要一些解释。它接下来出现在脚本中(但也可以放在代码的前面)。在这一步中，我们创建了几个助手函数，用于处理数据库表，并重建原始表和新文档 id 映射之间的链接。表<a href="#Tab2"> 7-2 </a>列出了新的助手功能及其描述。我们也将看到函数的代码。</p>
+<p>表 7-2</p><p class="SimplePara">转换脚本的帮助函数</p>
+
+
+<table style="border-collapse: collapse;border-top: 0.5pt solid ; border-bottom: 0.5pt solid ; border-left: 0.5pt solid ; border-right: 0.5pt solid ; "><colgroup><col class="tcol1 align-left"/>
+<col class="tcol2 align-left"/>
+<col class="tcol3 align-left"/>
+</colgroup>
+<thead><tr><th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">名字</p>
+</th>
+<th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">因素</p>
+</th>
+<th style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">描述</p>
+</th>
+</tr>
+</thead>
+<tbody><tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>show_collection(col_object)</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">集合对象</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">打印集合的内容(用于调试)。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_places(storage_id)</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">自动递增 id</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">获取与此存储 id 匹配的存储位置。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_organizer_ids(place_id)</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">自动递增 id</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">在存放处获取组织者 id 列表。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_handtool_ids(place_id)</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">自动递增 id</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">在存放处获取手工工具 id 清单</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_powertool_ids(place_id)</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">自动递增 id</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">在存放处获取电动工具 id 列表。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_mapping(old_id, mapping)</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">自动递增 id，映射(数组)</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">获取旧供应商 id 的新文档 id。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>find_tool_in_organizers(tool_id)</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">工具的 id(_ I)</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">在组织者集合中搜索该工具。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>find_tool(collection_name, tool_id)</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">工具的集合名称，_id</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">在给定集合中搜索工具。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_tool_location(tool_id)</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara">工具的 id(_ I)</p>
+</td>
+<td style="text-align: left;"><p class="SimplePara">查找工具的 location _id。</p>
+</td>
+</tr>
+</tbody>
+</table>
+
+<p class="Para" id="Par90"><code>get_∗</code>函数全部用于查询关系数据库表，以找到匹配自动增量值的行，并获得电动工具和手工工具的自动增量 id 列表。这些用来获取一行，这样就可以将它们转换成 JSON 文档。<code>find_∗</code>函数用于在集合中搜索与工具 id 匹配的 JSON 文档，这样我们就可以填充 locations 集合。</p>
+<p class="Para" id="Par91">此外，为了将工具存储位置与工具相关联，我们需要一种收集工具的方法。我们可以在文档中存储一个工具 id 数组，而不是创建一个引用、连接或查找表。因此，我们以这种方式创建链接，使其更加直观——我们打开一个工具箱，想看看里面有什么。</p>
+<p>现在让我们看看这些函数的代码。清单<a href="#PC14"> 7-13 </a>显示了函数的代码。我们不解释它们各自做什么，而是给出代码，并在后面的上下文中讨论它们。如果你看不到它们是如何工作的或者为什么要写它们，不要担心；当你看到它们在上下文中使用时，它们会更有意义。</p>
+<pre># Display the documents in a collection
+def show_collection(col_object):
+    print("\nCOLLECTION: {0}".format(col_object.name))
+    results = col_object.find().execute().fetch_all()
+    for document in results:
+        print(json.dumps(json.loads(str(document)),
+              indent=4, sort_keys=True))
+
+# Get the storage places that match this storage id
+def get_places(storage_id):
+    return place_tbl.select('Type', 'Description', 'Width', 'Depth',
+                            'Height', 'Id')\
+                    .where("StorageId = {0}".format(storage_id)).execute()
+
+# Get the list of organizer ids at the storage place
+def get_organizer_ids(place_id):
+    organizer_ids = []
+    org_results = organizer_tbl.select('Id')\
+                     .where("PlaceId = {0}".format(place_id)).execute()
+    for org in org_results.fetch_all():
+        organizer_ids.append(get_mapping(org[0], organizer_place_map)[0])
+    return organizer_ids
+
+# Get the list of handtool ids at the storage place
+def get_handtool_ids(place_id):
+    handtool_ids = []
+    ht_results = handtool_tbl.select('Id')\
+                 .where("PlaceId = {0}".format(place_id)).execute()
+    for ht in ht_results.fetch_all():
+        handtool_ids.append(ht[0])
+    return handtool_ids
+
+# Get the list of powertool ids at the storage place
+def get_powertool_ids(place_id):
+    powertool_ids = []
+    pt_results = powertool_tbl.select('Id')\
+                 .where("PlaceId = {0}".format(place_id)).execute()
+    for pt in pt_results.fetch_all():
+        powertool_ids.append(pt[0])
+    return powertool_ids
+
+# Get the new docid for the old vendor id
+def get_mapping(old_id, mapping):
+    for item in mapping:
+        if item[0] == old_id:
+            return item
+    return None
+
+
+
+
+
+
+# Search the organizers collection for the tool
+def find_tool_in_organizers(tool_id):
+    # organizers contain no shelves or drawers so fetch only the tool ids
+    organizers = garage_v2.get_collection('organizers')
+    results = organizers.find().fields("_id", "tool_ids", "type",
+                                       "description").execute().fetch_all()
+    for result in results:
+        if (result["tool_ids"]) and (tool_id in result["tool_ids"]):
+            return ("{0}, {1}".format(result["type"], result["description"]),
+                                      'organizers', result["_id"])
+    return None
+
+# Search for a tool in a given collection
+def find_tool(collection_name, tool_id):
+    collection = garage_v2.get_collection(collection_name)
+    storage_places = collection.find()\
+      .fields("_id", "description", "tool_locations").execute().fetch_all()
+    for storage_place in storage_places:
+        if storage_place["tool_locations"]:
+            for location in storage_place["tool_locations"]:
+                loc_data = locations.find('_id = :param1') \
+                                    .bind('param1',
+                                          location).execute().fetch_all()
+                if loc_data:
+                    loc_dict = dict(loc_data[0])
+                    tool_ids = loc_dict.get("tool_ids", [])
+                    if tool_id in tool_ids:
+                        return ("{0}, {1} - {2}"
+                                "".format(storage_place["description"],
+                                          loc_dict["description"],
+                                          loc_dict["type"]),
+                                          collection_name,
+                                          storage_place["_id"])
+    return None
+
+
+
+
+
+
+# Find the location document id for a tool.
+def get_tool_location(tool_id):
+    loc_found = find_tool_in_organizers(tool_id)
+    if loc_found:
+        return loc_found
+    storage_collections = [
+        'toolchests', 'shelving_units', 'workbenches', 'cabinets'
+    ]
+    for storage_collection in storage_collections:
+        loc_found = find_tool(storage_collection, tool_id)
+        if loc_found:
+            return loc_found
+    return None
+
+Listing 7-13
+Helper Functions
+
+
+
+</pre>
+
+<h4 class="Heading">步骤 3:填充集合</h4>
+<p>下一步是填充集合。我们可以用数据填充集合，但是必须按照特定的顺序。例如，代表存储设备和工具的集合中的每个文档都是供应商的文档 id。因此，我们需要首先执行<code>vendors</code>集合，从表中创建旧 id 列到 vendors 集合中新文档 id 的映射。让我们看看如何做到这一点。清单<a href="#PC15"> 7-14 </a>显示了将<code>vendor</code>表转换为<code>vendors</code>集合的代码。我们将更详细地研究这段代码，因为它构成了处理其他表和集合的模板。</p>
+<pre># Get the vendors
+my_results = vendor_tbl.select('Id', 'Name', 'URL', 'Sources').execute()
+vendor_id_map = []
+for v_row in my_results.fetch_all():
+    new_item = {
+        'name': v_row[1],
+        'url': v_row[2],
+        'sources': v_row[3]
+    }
+    last_docid = vendors.add(new_item).execute().get_generated_ids()[0]
+    vendor_id_map.append((v_row[0], last_docid))
+show_collection(vendors)
+
+Listing 7-14Populate the Vendors Collection
+
+
+</pre>
+<p class="Para" id="Par94">注意这里我们打开了<code>vendor</code>表并读取了所有数据。然后，我们创建一个空映射(数组),我们将使用它来记录从表到集合中新文档 id 的自动增量 id。这将允许我们将其他表中供应商列的自动增量 id 替换为集合中供应商的新文档 id。这是在转换过程中保留关系链接的一种很好的方式。</p>
+<p class="Para" id="Par95">我们使用一个循环来读取查询的结果，并使用表行中的数据形成一个包含属性(小写)的字典。然后我们使用<code>vendors</code>集合来添加供应商文档。</p>
+<p class="Para" id="Par96">我们可以将<code>add()</code>方法与<code>get_generated_ids()</code>调用链接起来，以获得生成的最后一个文档 id。然后我们将它添加到名为<code>vendor_id_map</code>的新映射中，稍后我们将使用它在其他集合的其他文档中插入供应商的正确文档 id。</p>
+<p class="Para" id="Par97">为了帮助可视化结果，我们使用<code>show_collection()</code>函数来打印集合的内容。</p>
+<p>我们转换的下一个集合是<code>tools</code>集合。回想一下，我们将把<code>handtool</code>和<code>powertool</code>表合并到工具集合中。因此，我们必须读取这些表，并将它们插入到<code>tools</code>集合中。清单<a href="#PC16"> 7-15 </a>显示了这个转换的代码。花点时间熟悉一下代码。</p>
+<pre># Get the tools combining the handtool and powertool tables
+ht_results = handtool_tbl.select('Id', 'VendorId', 'Description', 'Type', 'Toolsize', 'PlaceId').execute()
+tool_place_map = []
+for ht_row in ht_results.fetch_all():
+    new_item = {
+        'category': 'Handtool',
+        'vendorid': get_mapping(ht_row[1], vendor_id_map)[1],
+        'description': ht_row[2],
+        'type': ht_row[3],
+        'size': ht_row[4],
+    }
+    last_docid = tools.add(new_item).execute().get_generated_ids()[0]
+    tool_place_map.append((ht_row[0], last_docid))
+pt_results = powertool_tbl.select('Id', 'VendorId', 'Description', 'Type', 'PlaceId').execute()
+for pt_row in pt_results.fetch_all():
+    new_item = {
+        'category': 'Powertool',
+        'vendorid': get_mapping(pt_row[1], vendor_id_map)[1],
+        'description': pt_row[2],
+        'type': pt_row[3],
+    }
+    last_docid = tools.add(new_item).execute().get_generated_ids()[0]
+    tool_place_map.append((pt_row[0], last_docid))
+show_collection(tools)
+
+Listing 7-15Populate the Tools Collection
+
+
+</pre>
+<p class="Para" id="Par99">正如您所看到的，这段代码遵循与前面的代码相同的模式，为工具的自动增量 id 到生成的新文档 id 创建一个映射。请注意，电动工具没有大小属性，但手动工具有。因此，我们为手动工具而不是电动工具添加了该属性。这以一种小的方式展示了我们如何在同一个集合中使用具有不同属性(键)的文档。</p>
+<p class="Para" id="Par100">为了帮助可视化结果，我们使用<code>show_collection()</code>函数来打印集合的内容。</p>
+<p>我们转换的下一个集合是<code>organizers</code>集合。像以前一样，我们只是读取表中的行，并将它们插入到集合中。清单<a href="#PC17"> 7-16 </a>显示了将<code>organizer</code>表转换为<code>organizers</code>集合的代码。</p>
+<pre># Get organizers
+org_results = organizer_tbl.select('Id', 'Description', 'Type', 'Width', 'Depth', 'Height', 'PlaceId').execute()
+organizer_place_map = []
+for org_row in org_results.fetch_all():
+    tool_ids = get_handtool_ids(org_row[0])
+    tool_ids.extend(get_powertool_ids(org_row[0]))
+    tool_docids = [get_mapping(item, tool_place_map)[1] for item in tool_ids]
+    new_item = {
+        'description': org_row[1],
+        'type': org_row[2],
+        'width': org_row[3],
+        'depth': org_row[4],
+        'height': org_row[5],
+    }
+    if tool_docids:
+        new_item.update({'tool_ids': tool_docids})
+    last_docid = organizers.add(new_item).execute().get_generated_ids()[0]
+    # We also need to save the mapping of organizers to storage places
+    organizer_place_map.append((org_row[0], last_docid))
+show_collection(organizers)
+
+Listing 7-16Populate the Organizers Collection
+
+
+</pre>
+<p class="Para" id="Par102">虽然这段代码也遵循与前面相同的模式，但是我们创建了组织者 id 到新文档 id 的映射。然而，由于数据库中的 organizer 表通过<code>place</code>表引用了工具，我们使用 helper 函数从表中检索与该 organizer 匹配的工具 id。然后，我们构建一个工具 id 数组，并将其存储在属性<code>tool_ids</code>中。花点时间看看这是如何工作的。</p>
+<p class="Para" id="Par103">为了帮助可视化结果，我们使用<code>show_collection()</code>函数来打印集合的内容。</p>
+<p>我们转换的下一个集合是<code>toolchests</code>集合。这是我们将从存储表中分离出来的第一个集合，为每个存储设备创建一个单独的集合。由于我们在<code>storage</code>表中有不止一个存储设备，我们将把结果限制在那些<code>type</code>设置为<code>toolchest</code>的设备上。像以前一样，我们只是读取表中的行，并将它们插入到集合中。清单<a href="#PC18"> 7-17 </a>显示了将<code>storage</code>表转换成<code>toolchests</code>集合的代码。</p>
+<pre># Get the toolchests
+tc_results = storage_tbl.select('Id', 'VendorId', 'Description', 'Width', 'Depth', 'Height', 'Location').where("Type = 'Toolchest'").execute()
+# For each toolbox, get its storage places and insert into the collection
+for tc_row in tc_results.fetch_all():
+    new_tc = {
+        'vendorid': get_mapping(tc_row[1], vendor_id_map)[1],
+        'description': tc_row[2],
+        'width': tc_row[3],
+        'depth': tc_row[4],
+        'height': tc_row[5],
+        'location': tc_row[6],
+    }
+    _id = toolchests.add(new_tc).execute().get_generated_ids()[0]
+    # Now, generate the tool locations for this document
+    tool_locations = []
+    for pl_row in get_places(tc_row[0]).fetch_all():
+        # Get all organizers and tools that are placed here
+        tool_ids = get_handtool_ids(pl_row[5])
+        tool_ids.extend(get_powertool_ids(pl_row[5]))
+        tool_docids = []
+        org_ids = get_organizer_ids(pl_row[5])
+        if org_ids:
+            for org_id in org_ids:
+                map_found = get_mapping(org_id, organizer_place_map)
+                if map_found:
+                    tool_docids.append(map_found[1])
+        for item in tool_ids:
+            map_found = get_mapping(item, tool_place_map)
+            if map_found:
+                tool_docids.append(map_found[1])
+        if pl_row[0] == 'Shelf':
+
+
+
+
+            new_item = {
+                'type': 'Shelf',
+                'description': pl_row[1],
+                'width': pl_row[2],
+                'depth': pl_row[3],
+                'height': pl_row[4],
+            }
+            if tool_docids:
+                new_item.update({'tool_ids': tool_docids})
+            loc_id = locations.add(new_item).execute().get_generated_ids()[0]
+            tool_locations.append(loc_id)
+        else: # drawer is the only other value for type
+            new_item = {
+                'type': 'Drawer',
+                'description': pl_row[1],
+                'width': pl_row[2],
+                'depth': pl_row[3],
+                'height': pl_row[4],
+            }
+            if tool_docids:
+                new_item.update({'tool_ids': tool_docids})
+            loc_id = locations.add(new_item).execute().get_generated_ids()[0]
+            tool_locations.append(loc_id)
+    if len(tool_locations) &gt; 0:
+        toolchests.modify('_id = :param1') \
+                  .bind('param1', _id) \
+                  .set('tool_locations', tool_locations).execute()
+show_collection(toolchests)
+
+Listing 7-17Populate the Toolchests Collection
+
+
+</pre>
+<p class="Para" id="Par105">这段代码和前面一样，从表中获取行，并为集合创建一个新文档。然而，这变得有点复杂，因为我们必须将<code>places</code>表条目转换成<code>tool_locations</code>数组。这需要使用助手函数来构建来自数据库<code>handtool</code>和<code>powertool</code>表的 id 列表，以及来自<code>organizer</code>表的 id 列表，因为根据经验，我们知道可以将一个组织者放在工具箱中。</p>
+<p class="Para" id="Par106">然而，我们还需要检查 places 表，从数据库中找到存储位置，并将它们转换成新的<code>locations</code>集合。我们使用找到的工具 id 用新的工具 id 列表更新集合中的文档。这听起来很复杂，但是如果你花点时间研究一下代码，你会发现我们用助手函数来做这件事更容易。</p>
+<p class="Para" id="Par107">为了帮助可视化结果，我们使用<code>show_collection()</code>函数来打印集合的内容。</p>
+<p class="Para" id="Par108">为了简洁起见，我们将省略其他集合(<code>cabinets</code>、<code>shelving_units</code>和<code>workbenches</code>)的代码，因为它们遵循与<code>toolchests</code>转换代码相同的模式。像以前一样，我们只是读取表中的行，并将它们插入到新的集合中。</p>
+
+<h4 class="Heading">步骤 4:添加位置</h4>
+<p class="Para" id="Par109">最后一步用于填充每个工具和管理器的位置。回想一下数据库表，我们使用了一个表引用来查找位置。然而，由于我们有一个文档存储，我们可以简单地使用代码中内置的字符串。这保存了一个我们不需要维护的引用，相反，我们在创建和更新操作中设置位置时设置它。</p>
+<p>为此，我们使用另一个助手函数来构建位置字符串。我们更新了工具和组织者集合中的所有文档。清单<a href="#PC19"> 7-18 </a>显示了构建位置字符串的代码。</p>
+<pre># Add the location for each tool
+tool_results = tools.find().execute().fetch_all()
+for tool in tool_results:
+    _id = tool["_id"]
+    try:
+        location = get_tool_location(_id)
+        if location:
+            r = tools.modify('_id = :param1').bind('param1', _id).set('location', location[0]).execute()
+    except Exception as err:
+        print(err)
+        exit(1)
+show_collection(tools)
+# Add the location for each organizer
+org_results = organizers.find().execute().fetch_all()
+for org in org_results:
+    _id = org["_id"]
+    try:
+        location = get_tool_location(_id)
+        if location:
+            r = organizers.modify('_id = :param1').bind('param1', _id).set('location', location[0]).execute()
+    except Exception as err:
+        print(err)
+show_collection(organizers)
+show_collection(locations)
+
+
+
+
+
+Listing 7-18Build Location String and Update the Tools and Organizer Collections
+
+
+</pre>
+<p class="Para" id="Par111">注意，我们只是获取每个集合中的所有文档，并用新字符串更新文档。最后，我们打印集合中的文档(用于调试)。</p>
+<p class="Para" id="Par112">现在我们已经看到了所有的步骤，我们可以执行代码了。由于这是一个很长的脚本，我们将使用 Python 来执行代码，但是您可以使用 shell 来一次单独执行一个步骤。事实上，如果您以前从未编写过这样的代码，这将是首选方法。</p>
+<p class="Para" id="Par113">您可能认为这需要做大量的工作，但是在开发应用程序时，它会派上用场。尤其是当您要替换仍在使用的旧的关系数据库应用程序时。更具体地说，您可以在开发过程中多次运行这个脚本，以改进它和新的应用程序。更好的是，您可以在切换到新应用程序的过程中使用该脚本。</p>
+<p>幸运的是，您可以在图书网站上名为<code>convert_rdb.py</code>的文件中找到完整的代码。清单 7-19 显示了运行脚本的摘录。</p>
+<pre>C:\Users\cbell\MySQL Shell\source\Ch07&gt; mysqlsh --py -f convert_rdb.py
+User Id: root
+Password: ∗∗∗∗∗∗∗∗∗
+COLLECTION: vendors
+{
+    "_id": "00005cae7415000000000000016e",
+    "name": "Kobalt",
+    "sources": "Lowes",
+    "url": "https://www.kobalttools.com/"
+}
+{
+    "_id": "00005cae7415000000000000016f",
+    "name": "Craftsman",
+    "sources": "Lowes, Ace",
+    "url": "https://www.craftsman.com/"
+}
+{
+    "_id": "00005cae74150000000000000170",
+    "name": "Irwin",
+    "sources": "Lowes",
+    "url": "https://www.irwin.com/"
+}
+...
+{
+    "_id": "00005cae74150000000000000e41",
+    "depth": 12,
+    "description": "Top",
+    "height": 24,
+    "tool_ids": [
+        "00005cae74150000000000000df5",
+        "00005cae74150000000000000e0d"
+    ],
+    "type": "Shelf",
+    "width": 96
+}
+{
+    "_id": "00005cae74150000000000000e42",
+    "depth": 48,
+    "description": "Bottom",
+    "height": 42,
+    "tool_ids": [
+        "00005cae74150000000000000e0a"
+    ],
+    "type": "Shelf",
+    "width": 96
+}
+
+Listing 7-19Executing the Conversion Script
+
+
+</pre>
+<p class="Para" id="Par115">这将完全填充<code>garage_v2</code>模式和集合。但是，如果您想知道是否需要为每次转换或数据生成创建这样的脚本。答案是你可能不会。</p>
+
+
+<h3 class="Heading">将数据导入文档存储</h3>
+<p class="Para" id="Par116">MySQL Shell 中有一个漂亮的实用程序，可以帮助将 JSON 文档导入到您的集合中。shell 有一个名为 JSON import 的实用程序，它允许您将 JSON 文档直接导入到您的集合中。因此，如果您有 JSON 格式的数据，或者您可以编写一个脚本将其转换成 JSON 格式，那么您可以使用 JSON import 实用程序一次性导入文档。这有多酷？</p>
+<p class="Para" id="Par117">例如，假设您有从文件或其他输入流中读取的数据，并生成了 JSON 文档。如果您将它们写到一个文件中(文档之间没有逗号)，您可以使用该实用程序一次性导入所有文档。让我们看看如何使用前面文本中的供应商数据来实现这一点。</p>
+<p>我们从一个文件开始，文件中的每个文档都用 JSON 字符串表示，如下所示。请注意，文档之间没有逗号。还要注意我们没有<code>_id</code>属性(但是如果您想自己生成文档 id，可以添加它)。</p>
+<pre>{
+    "name": "Kobalt",
+    "sources": "Lowes",
+    "url": "https://www.kobalttools.com/"
+}
+{
+    "name": "Craftsman",
+    "sources": "Lowes, Ace",
+    "url": "https://www.craftsman.com/"
+}
+{
+    "name": "Irwin",
+    "sources": "Lowes",
+    "url": "https://www.irwin.com/"
+}
+...
+
+</pre>
+<p>要导入文档，可以使用 shell 连接到服务器，然后使用<code>util</code>内置类和<code>import_json()</code>方法指定要导入的文件的路径和一个包含模式和集合的选项字典。清单<a href="#PC22"> 7-20 </a>演示了将一个带有 JSON 文档的文件导入到<code>garage_v2</code>模式中的<code>vendors</code>集合中。注意，对于导入大量(JSON)数据来说，import 是一个非常方便的实用工具。</p>
+<pre>&gt; mysqlsh --py --uri root@localhost:33060
+&gt; options = {
+          -&gt;   'schema': 'garage_v2',
+          -&gt;   'collection': 'vendors',
+          -&gt; }
+          -&gt;
+&gt; util.import_json('vendors.json', options)
+Importing from file "vendors.json" to collection `garage_v2`.`vendors` in MySQL Server at localhost:33060
+
+.. 35
+Processed 4.68 KB in 35 documents in 0.0161 sec (2.17K documents/s)
+Total successfully imported documents 35 (2.17K documents/s)
+
+Listing 7-20Running the JSON Import Utility in the Shell
+
+
+</pre>
+<p class="Para" id="Par120">如您所见，该实用程序将读取文档并将它们插入到您指定的模式和集合中。该实用程序还会在插入之前验证 JSON 文档；因此，如果有错误，您将看到它们被报告，导入将停止。</p>
+<p>通过在命令行上指定导入参数和连接，该实用程序还允许在命令行模式下执行，如下文所示。还有一些其他选项可以使用，包括将数据导入到关系表中的 JSON 列，以及支持导入二进制 JSON (BSON)数据。很好！有关 JSON 导入实用程序的更多信息，请参见<a href="https://dev.mysql.com/doc/mysql-shell/8.0/en/mysql-shell-utilities-json.html"> <code>https://dev.mysql.com/doc/mysql-shell/8.0/en/mysql-shell-utilities-json.html</code> </a>。</p>
+<pre>&gt; mysqlsh --py --uri root@localhost:33060 --schema=garage_v2 \
+          --import vendors.json vendors
+Please provide the password for 'root@localhost:33060': ∗∗∗∗
+Importing from file "vendors.json" to collection `garage_v2`.`vendors` in MySQL Server at localhost:33060
+
+.. 35
+Processed 4.68 KB in 35 documents in 0.0097 sec (3.61K documents/s)
+Total successfully imported documents 35 (3.61K documents/s)
+
+</pre>
+<p class="Para" id="Par122">好了，现在我们有了一个完整的文档存储，我们可以看看如何为模式类编写代码了。</p>
+
+
+<h2 class="Heading">示范</h2>
+<p class="Para" id="Par123">示例应用程序的执行与第<a href="05.html"> 5 </a>章中的示例应用程序相同。不同之处在于，我们将为 CRUD 操作使用一个基类，为每个集合使用一个子类来处理该集合特有的验证。我们可以这样做，因为我们将数据布局(属性集)从数据中提取出来并放入代码中。因此，CRUD 方法的基本操作对于所有集合都是相同的。我们将在本节的后面看到这是如何工作的。</p>
+<p class="Para" id="Par124">更具体地说，我们将看到如何首先创建基类(<code>GarageCollection</code>)然后继续创建其他一些类的演示。正如你将看到的，它们遵循相同的设计模式/布局，所以一旦你看到一两个，其他的就很容易预测了。因此，我们将看到使用两个类的详细演练，为了简洁起见，其余的将被演示和呈现较少的细节。</p>
+<p class="Para" id="Par125">如果您想跟进，请确保已经加载了示例模式，并且 MySQL Shell 已经准备就绪。您可能还想使用代码或文本编辑器来编写代码模块。更重要的是，您应该创建一个名为<code>schema</code>的文件夹，并从父文件夹启动 shell。</p>
+<p class="Para" id="Par126">例如，您应该创建一个名为<code>mygarage_v2</code>的文件夹，并在该文件夹中创建<code>schema</code>文件夹。然后我们将执行来自<code>mygarage_v2</code>的 shell。为什么呢？因为会使用 Python 导入指令，并使用文件夹名命名代码模块的路径(如<code>from schema import Locations</code>)。我们还将创建单元测试，因此需要一个名为<code>unittests</code>的文件夹来存储测试文件。</p>
+<p class="Para" id="Par127">让我们从<code>MyGarage</code>类开始。回想一下，这是一个实用程序类，它处理与服务器的连接并获取模式。</p>
+<h3 class="Heading">我的车库班</h3>
+<p>该类旨在通过提供登录(连接)到服务器的机制和封装一些常见操作(如获取会话、当前数据库、检查到 MySQL 的连接是否活动、断开连接等)来简化 MySQL 服务器的工作。我们还将包括将 SQL 结果或 select 结果转换为 Python 列表(数组)的方法，以便于处理。表<a href="#Tab3"> 7-3 </a>显示了我们将为这个类创建的方法的完整列表，包括所需的参数(一些方法不需要它们)。</p>
+<p>表 7-3</p><p class="SimplePara">我的车库类方法</p>
+
+
+<table style="border-collapse: collapse;border-top: 0.5pt solid ; border-bottom: 0.5pt solid ; border-left: 0.5pt solid ; border-right: 0.5pt solid ; "><colgroup><col class="tcol1 align-left"/>
+<col class="tcol2 align-left"/>
+<col class="tcol3 align-left"/>
+</colgroup>
+<thead><tr><th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><strong class="EmphasisTypeBold ">方法</strong></p>
+</th>
+<th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><strong class="EmphasisTypeBold ">参数</strong></p>
+</th>
+<th style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><strong class="EmphasisTypeBold ">描述</strong></p>
+</th>
+</tr>
+</thead>
+<tbody><tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>__init__()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">mysqlx_sh(消歧义)</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">构造函数-如果从 MySQL Shell 运行，请提供 mysqlx。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>connect()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">用户名，密码，主机，端口</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">连接到主机端口的 MySQL 服务器。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_session()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">返回会话供其他类使用。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_schema()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">返回在其他类中使用的模式。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>is_connected()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">检查是否连接到服务器。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>disconnect()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">断开与服务器的连接。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_locations()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">返回一个 Python 数组，其中包含可以放置工具或管理器的所有位置。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>build_storage_contents()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">工具 _ 位置</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">返回工具位置中工具的 Python 数组。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>vendor_in_use()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara">供应商文档 id</p>
+</td>
+<td style="text-align: left;"><p class="SimplePara">如果在任何集合中使用了供应商，则返回<code>True</code>。</p>
+</td>
+</tr>
+</tbody>
+</table>
+
+<h4 class="Heading">编写源代码</h4>
+<p class="Para" id="Par129">这些方法中的大部分和我们在第 5 章中看到的一样。但是，后三种不一样。我们需要这些来管理选择放置工具的位置，获取特定工具位置中所有工具的列表，并实现对<code>vendors</code>集合的删除操作的引用完整性。也就是说，我们使用代码来确保没有人删除从另一个文档引用的供应商。</p>
+<p class="Para" id="Par130">清单<a href="#PC24"> 7-21 </a>显示了<code>MyGarage</code>类的代码。虽然这段代码看起来比版本 1 长(确实如此)，但这是因为我们将位置字符串处理和供应商参照完整性移到了代码中。</p>
+<h3 class="Heading">注意</h3>
+<p class="Para" id="Par131">为简洁起见，本章源代码清单中的注释和非必要行已被删除。</p>
+
+<p>
+                 
+              </p>
+<pre>class MyGarage(object):
+    def __init__(self, mysqlx_sh=None):
+        self.session = None
+        if mysqlx_sh:
+            self.mysqlx = mysqlx_sh
+            self.using_shell = True
+        else:
+            self.mysqlx = mysqlx
+            self.using_shell = False
+        self.schema = None
+    def connect(self, username, passwd, host, port):
+        config = {
+            'user': username,
+            'password': passwd,
+            'host': host,
+            'port': port,
+        }
+        try:
+            self.session = self.mysqlx.get_session(∗∗config)
+        except Exception as err:
+            print("CONNECTION ERROR:", err)
+            self.session = None
+            raise
+        self.schema = self.session.get_schema('garage_v2')
+    def get_session(self):
+        return self.session
+    def get_schema(self):
+        return self.schema
+    def is_connected(self):
+        return self.session and (self.session.is_open())
+    def disconnect(self):
+
+
+
+
+        try:
+            self.session.close()
+        except Exception as err:
+            print("WARNING: {0}".format(err))
+    def get_locations(self, include_organizers=True):
+        tool_locations = []
+        if include_organizers:
+            organizers = self.schema.get_collection('organizers').find().\
+                fields("_id", "type", "description").execute().fetch_all()
+            for organizer in organizers:
+                list_item_str = "{0} - {1}"\
+                  .format(organizer["type"], organizer["description"])
+                tool_locations.append((list_item_str, list_item_str))
+        storage_collections = ['toolchests', 'shelving_units',
+                               'workbenches', 'cabinets']
+        for storage_collection in storage_collections:
+            collection = self.schema.get_collection(storage_collection)
+            items = collection.find().fields("_id", "description",
+                             "tool_locations").execute().fetch_all()
+            for item in items:
+                locations_found = item["tool_locations"]
+                if locations_found:
+                    for tool_loc_id in locations_found:
+                        tool_location = self.schema\
+                           .get_collection("locations").\
+                            find('_id = :param1')\
+                           .bind('param1', tool_loc_id).execute().fetch_all()
+                        if tool_location:
+                            list_item_str = "{0}, {1} - {2}"\
+                                "".format(item["description"],
+                                tool_location[0]["description"],
+                                          tool_location[0]["type"])
+                            tool_locations.append((list_item_str,
+                                                   list_item_str))
+        return tool_locations
+    def build_storage_contents(self, tool_locations):
+        storage_places = []
+        tools = self.schema.get_collection('tools')
+        organizers = self.schema.get_collection('organizers')
+        locations = self.schema.get_collection('locations')
+        if not tool_locations:
+            return storage_places
+
+
+
+
+        list_of_tools = []
+        for loc_id in tool_locations:
+            tool_location = locations.find("_id = :param1").\
+                bind("param1", loc_id).execute().fetch_all()
+            if not tool_location or tool_location == []:
+                organizer = organizers.find("_id = :param1").\
+                    bind("param1", loc_id).execute().fetch_all()
+                if not organizer or organizer == []:
+                    continue # This is an error!
+                description = organizer[0]['description']
+                loc_type = organizer[0]['type']
+                list_of_tools.append(('organizers', loc_type,
+                                     description, 'organizer', ' '))
+                continue
+            else:
+                try:
+                    tool_id_list = tool_location[0]['tool_ids']
+                except KeyError:
+                    tool_id_list = []
+                description = tool_location[0]['description']
+                loc_type = tool_location[0]['type']
+            tool_list_str = '_id in [{0}]'.format(
+                ', '.join(['"{0}"'.format(t_id) for t_id in tool_id_list]))
+            found_tools = tools.find(tool_list_str).execute().fetch_all()
+            for tool in found_tools:
+                size = dict(tool).get('size', ' ')
+                list_of_tools.append(('tools', tool['type'],
+                                      tool['description'],
+                                      tool['category'], size))
+            storage_places.append((loc_type, description, list_of_tools))
+            list_of_tools = []
+        return storage_places
+    def vendor_in_use(self, vendor_id):
+        collections = ['cabinets', 'shelving_units', 'toolchests',
+                       'tools', 'workbenches']
+        for collection_name in collections:
+            collection = self.schema.get_collection(collection_name)
+            res = collection.find('vendorid = :param1').\
+                bind('param1', vendor_id).execute().fetch_all()
+            if res:
+                return True
+        return False
+
+
+
+
+
+Listing 7-21MyGarage Class Code
+
+
+</pre>
+              <p>这个代码模块<code>garage_v2</code>还包含一个名为<code>make_list()</code>的助手函数，我们可以用它从一个读操作中生成一个 Python 数组列表。清单<a href="#PC25"> 7-22 </a>显示了这个函数的代码。花点时间通读它，你会发现它是转换结果的简单代码。我们可以在集合类中使用这个方法来帮助处理来自模式的结果。</p>
+<pre>def make_list(results, key_list):
+    """Build list of Python arrays from results
+
+    Return a Python array for the list of documents returned from a read
+    operation.
+    """
+    result_list = []
+    for result in results:
+        item_values = []
+        for key in key_list:
+            try:
+                item_values.append(result[key])
+            except KeyError:
+                # If key not found, create a placeholder
+                item_values.append(“)
+        result_list.append(item_values)
+    return result_list
+
+
+
+
+
+Listing 7-22
+Helper Function
+
+
+
+</pre>
+
+<h4 class="Heading">测试类</h4>
+<p>在我们开始测试这个类之前，我们必须设置 Python path 变量(<code>PYTHONPATH</code>)来包含我们想要运行测试的文件夹。这是因为我们使用的模块没有安装在系统级，而是位于与我们测试的代码相关的文件夹中。在 Windows 中，可以使用以下命令将执行路径添加到 Python 路径中。</p>
+<pre>C:\Users\cbell\Documents\my_garage_v1&gt; set PYTHONPATH=%PYTHONPATH%;c:\users\cbell\Documents\mygarage_v1
+
+</pre>
+<h3 class="Heading">小费</h3>
+<p class="Para" id="Par135">如果路径中有空格，请确保在路径两边使用引号。</p>
+
+<p>或者，在 Linux 和 macOS 上，您可以使用这个命令来设置 Python 路径。</p>
+<pre>export PYTHONPATH=$(pwd);$PYTHONPATH
+
+</pre>
+<p>现在我们可以运行 shell 了。为此，我们将使用<code>--py</code>选项在 Python 模式下启动。让我们在课堂上练习一些方法。我们可以尝试所有的方法，除了<code>make_rows()</code>方法。我们稍后会看到这些。清单<a href="#PC28"> 7-23 </a>展示了如何在 shell 中导入类，初始化(创建)一个名为<code>mygarage</code>的类实例，然后连接<code>connect()</code>并执行一些方法。最后，我们调用<code>disconnect()</code>来关闭与服务器的连接。</p>
+<pre>C:\Users\cbell\Documents\mygarage_v2&gt;mysqlsh --py
+&gt; from schema.garage_v2 import MyGarage
+Running from MySQL Shell. Provide mysqlx in constructor.
+&gt; myg = MyGarage(mysqlx)
+&gt; myg.connect('root', 'root', 'localhost', 33060)
+&gt; schema = myg.get_schema()
+&gt; s = myg.get_session()
+&gt; myg.is_connected()
+true
+&gt; myg.disconnect()
+&gt; myg.is_connected()
+false
+
+Listing 7-23Testing MyGarage using MySQL Shell
+
+
+</pre>
+<p>接下来，我们将为这个类创建一个单元测试，方法与我们在第<a href="05.html"> 5 </a>章中所做的相似。事实上，我们将在<code>unittests</code>文件夹中创建一个名为<code>garage_v2_test.py</code>的测试，它将使用与第<a href="05.html"> 5 章</a>中几乎相同的代码，只改变导入语句中出现的<code>database</code>到 s <code>chema</code>和<code>v1</code>到<code>v2</code>。因此，我们在清单<a href="#PC29"> 7-24 </a>中给出了代码，没有进一步的解释。</p>
+<pre>from __future__ import print_function
+
+from getpass import getpass
+from schema.garage_v2 import MyGarage
+
+print("MyGarage Class Unit test")
+mygarage = MyGarage(mysqlx)
+user = raw_input("User: ")
+passwd = getpass("Password: ")
+print("Connecting...")
+mygarage.connect(user, passwd, 'localhost', 33060)
+print("Getting the schema...")
+schema = mygarage.get_schema()
+print(schema)
+print("Getting the session...")
+session = mygarage.get_session()
+print(session)
+print("Connected?")
+print(mygarage.is_connected())
+print("Disconnecting...")
+mygarage.disconnect()
+print("Connected?")
+print(mygarage.is_connected())
+
+
+
+
+
+Listing 7-24
+garage_v2_test.py
+
+
+
+</pre>
+<p>执行单元测试也像我们在第<a href="05.html"> 5 </a>章中所做的那样。清单<a href="#PC30"> 7-25 </a>展示了这个从 shell 运行的测试。</p>
+<pre>&gt; mysqlsh --py -f unittests\garage_v2_test.py
+Running from MySQL Shell. Provide mysqlx in constructor.
+MyGarage Class Unit test
+User: root
+Password:
+Connecting...
+Getting the schema...
+&lt;Schema:garage_v2&gt;
+Getting the session...
+&lt;Session:root@localhost:33060&gt;
+Connected?
+True
+Disconnecting...
+Connected?
+False
+
+Listing 7-25Running the garage_v1_test Unit Test
+
+
+</pre>
+<p class="Para" id="Par140">现在，让我们看看构成集合类基础的基类。</p>
+
+
+<h3 class="Heading">集合基类</h3>
+<p class="Para" id="Par141">如前所述，我们将创建一个包含集合的所有 CRUD 操作的基类。我们可以对所有集合使用相同方法的原因是，操作的格式、布局或简单的字段列表是由 JSON 文档本身控制的。因此，通过简单地使用集合类的方法，我们可以通过使用一个基类来简化我们的开发，这个基类完成所有的 CRUD 操作，并使用子类来处理数据上的任何约束。回想一下，我们将强加的约束与必填字段有关，在某些情况下与引用完整性有关。</p>
+<p>基类中的方法应该是熟悉的，因为它们与我们在第<a href="05.html"> 5 </a>章中使用的方法相同，只是为了方便和验证增加了一些。表<a href="#Tab4"> 7-4 </a>显示了基类中的每个方法，包括每个方法的简短描述。</p>
+<p>表 7-4</p><p class="SimplePara">GarageCollection 基类的方法</p>
+
+
+<table style="border-collapse: collapse;border-top: 0.5pt solid ; border-bottom: 0.5pt solid ; border-left: 0.5pt solid ; border-right: 0.5pt solid ; "><colgroup><col class="tcol1 align-left"/>
+<col class="tcol2 align-left"/>
+<col class="tcol3 align-left"/>
+</colgroup>
+<thead><tr><th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><strong class="EmphasisTypeBold ">方法</strong></p>
+</th>
+<th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><strong class="EmphasisTypeBold ">参数</strong></p>
+</th>
+<th style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><strong class="EmphasisTypeBold ">描述</strong></p>
+</th>
+</tr>
+</thead>
+<tbody><tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>__init__()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">架构，集合名称</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">构造器</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>check_create_prerequisites()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">JSON 文档</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">创建前检查数据</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>check_upate_prerequisites()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">JSON 文档</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">更新前检查数据</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>create()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">JSON 文档</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">执行创建操作</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>read()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">文档 Id</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">执行读取操作</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>update()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">JSON 文档</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">执行更新操作</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>delete()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">文档 Id</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">执行删除操作</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_last_docid()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">返回最后生成的文档 id。</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_tool_locations()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara">文档 Id</p>
+</td>
+<td style="text-align: left;"><p class="SimplePara">返回工具位置列表。</p>
+</td>
+</tr>
+</tbody>
+</table>
+
+<p class="Para" id="Par143">注意，我们有预期的 CRUD 操作方法，但是我们也看到了检查创建和更新操作的先决条件的方法。默认情况下，这些方法被设置为返回 True，期望需要这些方法的子类将根据特定于集合的要求填充它们。</p>
+<p class="Para" id="Par144">还要注意，我们有助手函数来检索生成的最后一个文档 id，这有助于创建操作和获取工具位置列表的方法。最后一个方法不是绝对必要的，因为您可以使用路径表达式来访问数组，但是它使类更加整洁，并且在代码中更容易使用(和阅读)。</p>
+<h4 class="Heading">编写源代码</h4>
+<p class="Para" id="Par145">基类的代码使用构造函数中传递的集合名称实现前面文本中的方法，以从架构中获取集合的实例。这允许我们对每个 CRUD 操作使用相同的 X DevAPI 调用，不管我们使用哪个集合。事实上，由于我们将 JSON 文档的结构移到了用户界面代码中，所以我们甚至不需要直接使用它，除非我们希望验证必填字段或引用完整性。</p>
+<p class="Para" id="Par146">因此，我们将创建前面文本中描述的先决条件函数，默认情况下返回 True，这样，如果子类(集合)不需要它们，如果先决条件函数没有在子类中被覆盖，代码将不会停止。</p>
+<p class="Para" id="Par147">例如，如果我们不需要在更新操作中进行验证，我们就不需要在子类定义中包含该函数，这意味着当从删除或更新操作中调用它时，它仍然可以工作。</p>
+<p>此外，由于我们使用了基类，子类继承了基类的方法，这再次意味着我们只需要为 CRUD 操作编写一次代码。让我们看看代码，你可以看到这是如何工作的。清单<a href="#PC31"> 7-26 </a>显示了新基类的代码。</p>
+<pre>class GarageCollection(object):
+    def __init__(self, mygarage, collection_name):
+        self.mygarage = mygarage
+        self.schema = mygarage.get_schema()
+        self.collection_name = collection_name
+        self.col = self.schema.get_collection(collection_name)
+        self.docid = None
+    def check_create_prerequisites(self, doc_data):
+        return True
+    def check_update_prerequisites(self, doc_data):
+        return True
+    def create(self, doc_data):
+        if not self.check_create_prerequisites(doc_data):
+            return (False, "Required fields missing.")
+        try:
+            json_str = {}
+            for key in doc_data.keys():
+                json_str.update({key: doc_data[key]})
+            self.docid = self.col.add(json_str).\
+                         execute().get_generated_ids()[0]
+        except Exception as err:
+            print("ERROR: Cannot add {0}: {1}"
+                  "".format(err, self.collection_name))
+            return (False, err)
+        return (True, None)
+    def read(self, _id=None):
+        if not _id:
+            res = self.col.find().execute().fetch_all()
+        else:
+            res = self.col.find('_id = :param1').\
+                  bind('param1', _id).execute().fetch_all()
+        return res
+
+
+
+    def update(self, doc_data):
+        _id = doc_data.get("_id", None)
+        assert _id, "You must supply an Id to update the {0}."\
+            "".format(self.collection_name.rstrip('s'))
+        if not self.check_update_prerequisites(doc_data):
+            return (False, "Required fields missing.")
+        try:
+            for key in doc_data.keys():
+                # Skip the _id key
+                if key != '_id':
+                    self.col.modify('_id = :param1') \
+                        .bind('param1', _id) \
+                        .set(key, doc_data[key]).execute()
+        except Exception as err:
+            print("ERROR: Cannot update {0}: {1}".format(
+                self.collection_name.rstrip('s'), err))
+            return (False, err)
+        return (True, None)
+    def delete(self, _id=None):
+        assert _id, "You must supply an Id to delete the {0}."\
+            "".format(self.collection_name.rstrip('s'))
+        try:
+            self.col.remove('_id = :param1').bind('param1', _id).execute()
+        except Exception as err:
+            print("ERROR: Cannot delete {0}: {1}"
+                  "".format(self.collection_name.rstrip('s'), err))
+            return (False, err)
+        return (True, None)
+    def get_last_docid(self):
+        docid = self.docid
+        self.docid = None # Clear it after it was read
+        return docid
+    def get_tool_locations(self, _id=None):
+        assert _id, "You must supply an Id to get the tool locations."
+        results = []
+        if _id:
+            places = self.col.find('_id = :param1').bind('param1', _id).\
+                fields("tool_locations").execute().fetch_all()
+            try:
+                tool_locations = places[0]["tool_locations"]
+                if tool_locations:
+                    locations = self.mygarage.get_schema().\
+                               get_collection("locations")
+                    tool_ids = ', '.join(['"{0}"'
+                     “.format(tool_id) for tool_id in tool_locations])
+                    tool_loc_str = '_id in [{0}]'.format(tool_ids)
+                    results = locations.find(tool_loc_str).\
+                              execute().fetch_all()
+            except KeyError:
+                results = []
+        return results
+
+
+
+
+Listing 7-26The GarageCollection Base Class Code
+
+
+</pre>
+<p>让我们看看其中的一个子类。在这个例子中，我们将看到<code>Vendors</code>类，它在<code>garage_v2</code>模式中对 vendors 集合进行建模。我们将这段代码放在名为<code>vendors.py</code>的<code>schema</code>文件夹中的代码文件中。下面显示了<code>Vendors</code>类的代码。注意，它比我们在第<a href="05.html"> 5 </a>章的示例应用程序版本 1 中使用的<code>Vendor</code>类代码要少得多。</p>
+<pre>from schema.garage_collection import GarageCollection
+class Vendors(GarageCollection):
+    def __init__(self, mygarage):
+        """Constructor - set collection name"""
+        GarageCollection.__init__(self, mygarage, 'vendors')
+    def check_create_prerequisites(self, doc_data):
+        """Check prerequisites for the create operation."""
+        vendor_name = doc_data.get("name", None)
+        assert vendor_name, "You must supply a name for the vendor."
+        return True
+
+</pre>
+<p class="Para" id="Par150">集合的其余类同样简短，只包含适用于集合的验证代码方法。清单<a href="#PC33"> 7-27 </a>显示了集合代码模块的组成(每个模块保存在一个单独的代码模块中),为了简洁起见，去掉了注释。花一些时间来看看使用基类如何通过允许您将特定于集合的代码放在子类中而使编写集合类变得更容易。每个集合的部分以粗体突出显示。为了简洁起见，注释和多余的行再次被删除。</p>
+<h3 class="Heading">注意</h3>
+<p class="Para" id="Par151">我们将重用第<a href="05.html"> 5 </a>章中的技术，用单元测试来测试类模块，而不是带你测试每个类模块。</p>
+
+<p>
+                 
+              </p>
+<pre>
+# Cabinets collection - cabinets.py
+
+class Cabinets(GarageCollection):
+...
+def check_create_prerequisites(self, doc_data):
+        vendor_id = doc_data.get("vendorid", None)
+        description = doc_data.get("description", None)
+        location = doc_data.get("location", None)
+        numdoors = doc_data.get("numdoors", None)
+        assert vendor_id, "You must supply a vendor id for the cabinet."
+        assert description, "You must supply a description for the cabinet."
+        assert numdoors, "You must supply the number of doors "\
+                         "for the cabinet."
+        assert location, "You must supply a location for the cabinet."
+        return True
+
+# Locations collection - locations.py
+
+class Locations(GarageCollection):
+...
+    def check_create_prerequisites(self, doc_data):
+        loc_type = doc_data.get("type", None)
+        description = doc_data.get("description", None)
+        assert loc_type, "You must supply a type for the location."
+
+
+
+        assert description, "You must supply a description for the location."
+        return True
+    def remove_tool(self, tool_id):
+        location = self.col.find(':param1 in $.tool_ids').\
+            bind('param1', tool_id).execute().fetch_all()
+        if location:
+            tool_locations = location[0]['tool_ids']
+            tool_locations.remove(tool_id)
+
+# Organizers collection - organisers.py
+
+ORGANIZER_TYPES = [
+    ('Bag', 'Bag'), ('Basket', 'Basket'), ('Bin', 'Bin'),
+    ('Box', 'Box'), ('Case', 'Case'), ('Crate', 'Crate')
+]
+class Organizers(GarageCollection):
+...
+    def check_create_prerequisites(self, doc_data):
+        description = doc_data.get("description", None)
+        org_type = doc_data.get("type", None)
+        assert description, "You must supply a description for "\
+                            "the organizer."
+        assert org_type, "You must supply type for the organizer."
+        return True
+    def remove_tool(self, tool_id):
+        location = self.col.find(':param1 in $.tool_ids').\
+            bind('param1', tool_id).execute().fetch_all()
+        if location:
+            tool_locations = location[0]['tool_ids']
+            tool_locations.remove(tool_id)
+
+# Shelving Units collection - shelving_units.py
+
+class ShelvingUnits(GarageCollection):
+...
+    def check_create_prerequisites(self, doc_data):
+        vendor_id = doc_data.get("vendorid", None)
+        description = doc_data.get("description", None)
+        location = doc_data.get("location", None)
+        assert vendor_id, "You must supply a vendor id for "\
+                          "the shelving_unit."
+        assert description, "You must supply a description for "\
+                            "the shelving_unit."
+        assert location, "You must supply a location for the shelving_unit."
+        return True
+
+
+
+
+# Toolchests collection - toolchests.py
+
+class Toolchests(GarageCollection):
+...
+    def check_create_prerequisites(self, doc_data):
+        vendor_id = doc_data.get("vendorid", None)
+        description = doc_data.get("description", None)
+        location = doc_data.get("location", None)
+        assert vendor_id, "You must supply a vendor id for the toolchest."
+        assert description, "You must supply a description for "\
+                            "the toolchest."
+        assert location, "You must supply a location for the toolchest."
+        return True
+
+# Tools collection - tools.py
+
+TOOL_TYPES = [
+    ('Adjustable Wrench', 'Adjustable Wrench'), ('Awl',  'Awl'),
+    ('Clamp', 'Clamp'), ('Crowbar', 'Crowbar'), ('Drill Bit', 'Drill Bit'),
+    ('File', 'File'), ('Hammer', 'Hammer'), ('Knife', 'Knife'),
+    ('Level', 'Level'), ('Nutdriver', 'Nutdriver'), ('Pliers', 'Pliers'),
+    ('Prybar', 'Prybar'), ('Router Bit', 'Router Bit'), ('Ruler', 'Ruler'),
+    ('Saw', 'Saw'), ('Screwdriver', 'Screwdriver'), ('Socket', 'Socket'),
+    ('Socket Wrench', 'Socket Wrench'), ('Wrench', 'Wrench'),
+    ('Corded', 'Corded'), ('Cordless', 'Cordless'), ('Air', 'Air')
+]
+
+
+
+class Tools(GarageCollection):
+...
+    def check_create_prerequisites(self, doc_data):
+        vendor_id = doc_data.get("vendorid", None)
+        description = doc_data.get("description", None)
+        tool_type = doc_data.get("type", None)
+        category = doc_data.get("category", None)
+        assert vendor_id, "You must supply a vendor id for the tool."
+        assert description, "You must supply a description for the tool."
+        assert category, "You must supply the category of tool "\
+                         "(handtool or powertool) for the tool."
+        assert tool_type, "You must supply category for the tool."
+        return True
+
+# Workbenches collection - workbenches.py
+
+class Workbenches(GarageCollection):
+...
+    def check_create_prerequisites(self, doc_data):
+        vendor_id = doc_data.get("vendorid", None)
+        description = doc_data.get("description", None)
+        location = doc_data.get("location", None)
+        assert vendor_id, "You must supply a vendor id for the workbench."
+        assert description, "You must supply a description for "\
+                            "the workbench."
+        assert location, "You must supply a location for the workbench."
+        return True
+
+
+
+
+Listing 7-27Collection Classes for MyGarage V2
+
+
+</pre>
+              <p class="Para" id="Par153">请注意，每个集合都有定制，主要是针对从基类派生的验证方法。但是有些类还添加了额外的方法来允许特定于集合的选项。</p>
+<p class="Para" id="Par154">例如，我们在 Locations 和 Organizers 类中看到了方法<code>remove_tool()</code>。此方法允许我们通过文档 id 从位置或组织者中删除工具。通过这种方式，我们可以确保在从集合中删除工具时将其删除。</p>
+<p>还要注意，我们为集合中的属性添加了数组，这些属性具有一组已知的值(版本 1 中关系表中的枚举值)。在这种情况下，它们出现在<code>organizers</code>和<code>tools</code>集合中。回想一下，我们提到过这些是用代码处理的。在本章的示例应用程序中，我们使用 Python 数组在用户界面的下拉列表中使用。因此，我们使用代码来建立一组有效值。图<a href="#Fig2"> 7-2 </a>就是这样一个例子。</p>
+<p><img alt="../images/478423_1_En_7_Chapter/478423_1_En_7_Fig2_HTML.jpg" src="../images/478423_1_En_7_Chapter/478423_1_En_7_Fig2_HTML.jpg" style="height:31.7em"/></p>
+<p>图 7-2</p><p class="SimplePara">工具类型的下拉列表</p>
+
+
+<p class="Para" id="Par156">现在，让我们回顾一下在编写应用程序的其余部分之前如何测试类模块。</p>
+
+
+<h3 class="Heading">测试类模块</h3>
+<p class="Para" id="Par157">我们也将使用第 5 章中相同的单元测试机制。为了简洁，我们将只检查其中一个单元测试代码模块来提醒我们代码。然后我们使用我们在第<a href="05.html"> 5 </a>章中使用的相同的<code>run_all.py</code>代码模块机制来执行单元测试。</p>
+<p class="Para" id="Par158">回想一下，我们在<code>unittests/crud_test.py</code>代码模块中创建了一个名为<code>CRUDTest</code>的基类，它实现了启动(或设置)测试的相同方法，一个显示返回行的通用方法，以及一个我们想要运行的测试用例。然后我们用一个类创建了一个代码模块来测试其中一个集合类(或者我们在第<a href="05.html"> 5 </a>章中称之为表类)。</p>
+<p>例如，我们通过创建一个名为<code>VendorTests</code>的新类来为<code>Vendors</code>类创建一个测试，这个新类是从<code>CRUDTest</code>派生的，并存储在文件<code>unittests/vendor_test.py</code>中。清单<a href="#PC34"> 7-28 </a>显示了新类的代码。正如你将看到的，它与我们在第<a href="05.html"> 5 </a>章中写的测试非常相似，这也展示了为 SQL 和 NoSQL 接口开发代码是多么容易——代码非常相似。</p>
+<pre>from __future__ import print_function
+
+from unittests.crud_test import CRUDTest
+from schema.vendors import Vendors
+
+class VendorTests(CRUDTest):
+    """Test cases for the Vendors class"""
+
+    def __init__(self):
+        """Constructor"""
+        CRUDTest.__init__(self)
+        self.vendors = None
+        self.last_id = None
+        self.vendors = None
+
+    def set_up(self, mysql_x, user=None, passwd=None):
+        """Setup the test cases"""
+        self.mygarage = self.begin(mysql_x, "Vendors", user, passwd)
+        self.vendors = Vendors(self.mygarage)
+
+    def create(self):
+        """Run Create test case"""
+        print("\nCRUD: Create test case")
+        vendor_data = {
+            "name": "ACME Bolt Company",
+            "url": "www.acme.org",
+            "sources": "looney toons"
+        }
+        self.vendors.create(vendor_data)
+        self.last_id = self.vendors.get_last_docid()
+        print("\tLast insert id = {0}".format(self.last_id))
+
+    def read_all(self):
+        """Run Read(all) test case"""
+        print("\nCRUD: Read (all) test case")
+        docs = self.vendors.read()
+        self.show_docs(docs, 5)
+
+    def read_one(self):
+        """Run Read(record) test case"""
+        print("\nCRUD: Read (doc) test case")
+        docs = self.vendors.read(self.last_id)
+        self.show_docs(docs, 1)
+
+    def update(self):
+        """Run Update test case"""
+        print("\nCRUD: Update test case")
+        vendor_data = {
+            "_id": self.last_id,
+            "name": "ACME Nut Company",
+            "url": "www.weesayso.co",
+        }
+        self.vendors.update(vendor_data)
+
+
+
+
+
+
+    def delete(self):
+        """Run Delete test case"""
+        print("\nCRUD: Delete test case")
+        self.vendors.delete(self.last_id)
+        docs = self.vendors.read(self.last_id)
+        if not docs:
+            print("\tNot found (deleted).")
+
+Listing 7-28Code for the VendorTests Class
+
+
+</pre>
+<p class="Para" id="Par160">这项技术的强大之处在于，我们可以继续为每个以类命名的数据库类创建新的测试，并将它们存储在同一个<code>unittests</code>文件夹中。由于测试使用了与第<a href="05.html"> 5 </a>章中相同的类签名(相同的方法)，我们可以重用它们，用<code>schema</code>代替<code>database</code>，并在导入语句中使用复数形式的集合名称，然后根据需要对数据进行微小的修改，以匹配集合模块的新属性集。</p>
+<p>一旦编写了所有的集合类测试代码模块，我们就可以编写一个驱动程序脚本，在一个循环中运行所有的测试。回想一下，驱动程序脚本名为<code>run_all.py</code>，也存储在<code>unittests</code>文件夹中。清单<a href="#PC35"> 7-29 </a>显示了这个模块的代码。</p>
+<pre>from __future__ import print_function
+
+from getpass import getpass
+from unittests.cabinet_test import CabinetTests
+from unittests.location_test import LocationTests
+from unittests.organizer_test import OrganizerTests
+from unittests.shelving_unit_test import ShelvingUnitTests
+from unittests.toolchest_test import ToolchestTests
+from unittests.tool_test import ToolTests
+from unittests.vendor_test import VendorTests
+from unittests.workbench_test import WorkbenchTests
+
+print("CRUD Tests for all classes...")
+crud_tests = []
+cabinets = CabinetTests()
+crud_tests.append(cabinets)
+locations = LocationTests()
+crud_tests.append(locations)
+shelving_units = ShelvingUnitTests()
+crud_tests.append(shelving_units)
+toolchests = ToolchestTests()
+crud_tests.append(toolchests)
+tools = ToolTests()
+crud_tests.append(tools)
+organizers = OrganizerTests()
+crud_tests.append(organizers)
+vendors = VendorTests()
+crud_tests.append(vendors)
+workbenches = WorkbenchTests()
+crud_tests.append(workbenches)
+user = raw_input("User: ")
+passwd = getpass("Password: ")
+for test in crud_tests:
+    test.set_up(mysqlx, user, passwd)
+    test.create()
+    test.read_one()
+    test.read_all()
+    test.update()
+    test.read_one()
+    test.delete()
+    test.tear_down()
+
+Listing 7-29
+Test Driver run_all.py
+
+
+
+</pre>
+<p>要执行这个测试，您可以使用清单<a href="#PC36"> 7-30 </a>中所示的命令以及预期的输出。这里，为了简洁起见，我们只看到输出的一部分。</p>
+<pre>C:\Users\cbell\Documents\mygarage_v2&gt;mysqlsh --py -f unittests\run_all.py
+Running from MySQL Shell. Provide mysqlx in constructor.
+CRUD Tests for all classes...
+User: root
+Password: ∗∗∗∗∗∗∗∗∗∗∗∗
+
+∗∗∗ Cabinets Class Unit test ∗∗∗
+
+Connecting...
+
+CRUD: Create test case
+        Last insert id = 00005cc4bca00000000000000001
+
+CRUD: Read (doc) test case
+
+First 1 docs:
+--------------------------
+{
+    "_id": "00005cc4bca00000000000000001",
+    "depth": 11,
+    "description": "Large freestanding cabinet",
+    "height": 11,
+    "location": "Read wall next to compressor",
+    "numdoors": 2,
+    "shelves": [
+        {
+            "depth": 20,
+            "description": "Middle",
+            "height": 18,
+            "width": 48
+        }
+    ],
+    "vendorid": "00005cae74150000000000000cd6",
+    "width": 11
+}
+...
+CRUD: Update test case
+
+CRUD: Read (doc) test case
+
+First 1 docs:
+--------------------------
+{
+
+
+
+    "_id": "00005cc4bca00000000000000001",
+    "depth": 11,
+    "description": "Cold Storage",
+    "height": 11,
+    "location": "3rd floor basement",
+    "numdoors": 2,
+    "shelves": [
+        {
+            "depth": 20,
+            "description": "Top",
+            "height": 18,
+            "width": 48
+        },
+        {
+            "depth": 20,
+            "description": "Bottom",
+            "height": 18,
+            "tool_ids": [
+                "00005cafa3eb00000000000007c5",
+                "00005cafa3eb00000000000007c6",
+                "00005cafa3eb00000000000007c7"
+            ],
+            "width": 48
+        }
+    ],
+    "vendorid": "00005cae74150000000000000cd6",
+    "width": 11
+}
+
+CRUD: Delete test case
+        Not found (deleted).
+
+Disconnecting...
+...
+
+
+
+
+Listing 7-30Executing the test driver
+
+
+</pre>
+<p class="Para" id="Par163">花些时间从书籍网站下载代码，并自己测试单元测试。我们鼓励您下载这个示例应用程序的源代码，并自己进行测试。深入研究代码，看看它是如何工作的。使用这个示例应用程序作为指南，您可能会惊讶于创建自己的文档存储应用程序是多么容易。</p>
+<p class="Para" id="Par164">您应该注意到使用这个概念非常容易，并且您可以开发其他概念，比如帮助测试您的数据库代码。只是觉得；我们无需编写任何用户界面代码就可以做到这一点，这允许在编写第一行用户界面代码之前验证我们的数据库代码。很好！</p>
+
+
+<h2 class="Heading">摘要</h2>
+<p class="Para" id="Par165">为文档存储(NoSQL)创建和编写应用程序可能看起来不如传统的关系数据库应用程序直观，但是现在您已经看到了将数据控制直接放入代码中的强大功能，您可以看到文档存储应用程序更容易编写。事实上，它们使用类似的 CRUD 操作，正如我们在第 5 章<a href="05.html">的关系数据库例子中看到的。</a></p>
+<p class="Para" id="Par166">在本章中，我们看到了如何使用 shell 来开发一个 NoSQL 应用程序。我们发现了如何编写 CRUD 操作来处理文档存储，以及如何编写模块化模式类来管理操作。我们还看到了如何编写测试来测试模式类。这演示了 shell 在使用 X DevAPI 开发 Python 应用程序时的效用。</p>
+<p class="Para" id="Par167">在下一章中，我们将看看 MySQL 中的另一个主要特性，您可以使用 shell 来管理它——MySQL 组复制。正如您将看到的，组复制是 MySQL 高可用性的一大进步。</p>
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par6">这里展示的示例应用程序没有 SQL 语句，只使用 Python 和 X DevAPI。</p>
+
+ 
+
+<a href="#Fn2_source">2</a><p class="Para" id="Par13">我亲眼目睹了几个设计上的大失败，在这些失败中，数据库将一个不自然的、通常是敌对的工作流程强加给了用户。该应用程序似乎是由内而外编写的，这使得用户很难学会更少的使用。不要像那些开发商一样。</p>
+
+ 
+
+<a href="#Fn3_source">3</a><p class="Para" id="Par18">我向你挑战，把它作为一个练习！</p>
+
+ 
+
+<a href="#Fn4_source">4</a><p class="Para" id="Par45">但不要这样称呼它。是证件 id。</p>
+
+ 
+
+<a href="#Fn5_source">5</a><p class="Para" id="Par81">没错。去过那里，比我想承认的次数还多。规划解决了很多问题！</p>
+
+ 
+
+</aside>
+
+</body>
+</html>

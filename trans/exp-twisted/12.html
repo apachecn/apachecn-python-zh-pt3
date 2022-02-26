@@ -1,0 +1,75 @@
+<html lang="en">
+<head><title>Twisted and Django Channels</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">12.扭曲频道和 Django 频道</h1>
+
+ 
+<!--End Abstract--><h2 class="Heading">介绍</h2>
+<p class="Para" id="Par2">接下来的部分将深入 Django 通道的结构和构建它所使用的技术，并尝试梳理出有用的设计细节，无论何时您构建旨在水平伸缩的复杂多层分布式应用程序，都可以使用这些细节。</p>
+<p class="Para" id="Par3">Python 是最早定义 web 应用程序和 web 服务器之间的标准接口的编程语言之一，它不是基于 CGI，即通用网关接口。CGI 虽然有效，但不是特别快或高性能，因此需要在服务器和应用程序之间开发更丰富的接口，最好是利用语言原语和功能的接口。</p>
+<p class="Para" id="Par4">2003 年，Python 核心开发团队采用了 PEP 333，它定义了 Web 服务器网关接口(WSGI)。WSGI 是一个 API 规范，它允许能够创建 Python 对象和调用 Python 函数(从 Python 或通过 C API)的 web 服务器以标准化的方式调用 web 应用程序。WSGI 的目标是将 web 应用程序框架从 web 服务器中分离出来，这样任何 web 服务器都可以运行任何 Python web 应用程序。</p>
+<p class="Para" id="Par5">从这个角度来看，WSGI 非常成功。本书的大多数读者不会记得 WSGI 之前的世界，因此上面的描述看起来令人困惑:怎么会有 web 框架和 web 服务器没有解耦的世界呢？在后 WSGI 时代，Python 社区见证了伟大的 web 应用程序框架(如 Django 和 Flask)和伟大的 web 服务器(如 uWSGI、gunicorn 和 Twisted)在 WSGI 灵活性基础上的激增。</p>
+<p class="Para" id="Par6">然而，这并不是一个完美的协议。特别是，WSGI 服务器通过调用同步 Python 函数来调用 WSGI 应用程序，并在它返回之前阻止执行。WSGI 中 Python 应用程序的这种基本同步调用意味着 WSGI 应用程序不容易以异步方式编写。从表面上看，这给程序员带来了一些不便:他们不能使用 Twisted 或者<code>async</code>和<code>await</code>关键字。然而，在更基础的层面上，这使得 Python web 应用程序有些低效:它们处理的每个并发 web 请求都需要一个全新的操作系统线程来处理。这种方法的低效是众所周知的:毕竟，这是 Twisted 存在的部分原因！</p>
+<p class="Para" id="Par7">Django 通道代表了一种尝试，即允许以更并发的方式编写 Django 应用程序，同时保持与 WSGI 应用程序的向后兼容性。这是一项相当大的工作，因此“Django 频道”实际上涵盖了广泛的相关技术项目。这些包括用于服务器到应用程序通信的新接口，异步服务器网关接口(ASGI)；实现该接口的服务器部分的参考 web 服务器(Daphne)；和一个 Django 应用程序，使 Django 能够处理 ASGI 请求。</p>
+<p>Django 通道的净效果是将 Django 的焦点从请求和响应转移到“事件”这使得基于通道的应用程序不仅可以处理 HTTP 请求和响应，还可以处理 WebSockets 甚至普通的 TCP/UDP 数据。这是通过将整个网络堆栈分成三部分来实现的:</p>
+<ol><li class="ListItem"><p class="Para" id="Par9">ASGI 服务器。该服务器负责接受输入连接并从写协议(例如 HTTP)转换成 ASGI 消息，将这些消息放入队列(“信道”)，并从这些信道接收消息并将它们转换回有线协议数据。在参考实现中，这是 Daphne，一个基于 Twisted 的 web 服务器。</p>
+ </li>
+<li class="ListItem"><p class="Para" id="Par10">“通道后端”，它基本上是一个可以用作消息代理的数据存储。对于琐碎的应用程序，这可能只是一些共享内存，但在较大的应用程序中，这通常是一个 Redis 部署。</p>
+ </li>
+<li class="ListItem"><p class="Para" id="Par11">一个或多个“工人”当有消息要处理时，这些工人监听一些或所有通道并运行相关代码。工作线程可能是顺序的和线程化的，但也可能不是。这是传统 Django 应用程序代码运行的地方。</p>
+ </li>
+</ol>
+
+<p class="Para" id="Par12">这三个部分中，1 和 3 都可以与 Twisted 集成。然而，大多数 Django 用户将坚持使用常规的同步 Django 代码作为他们的工作代码，至少在可预见的将来是这样，所以在这一点上没什么可说的。</p>
+<p class="Para" id="Par13">更值得关注的是 Daphne 和渠道系统的设计。Channels 是一个有用的实例，展示了如何使用 Twisted 和消息代理来构建复杂的多层分布式系统。本章将以这种方式使用通道。它还将讨论与 Autobahn 相关的通道，Autobahn 是 Twisted 的 WebSocket 实现。</p>
+
+<h2 class="Heading">渠道构建模块</h2>
+<p class="Para" id="Par14">渠道的基本组成部分是众所周知的和可信的软件工具的集合。这是通道设计的一大优势。对于像 Django 这样重要且广泛使用的软件来说，相对于软件组件的“酷”因素，更重视可靠性和确定性是很重要的。</p>
+<p class="Para" id="Par15">如前所述，通道分为三个部分。这些组件中的每一个都是建立在一个核心软件之上的。</p>
+<p class="Para" id="Par16">第一个组件 Daphne 是构建在<code>twisted.web</code>之上的 web 服务器。Daphne 的运营目标还包括支持 WebSockets，这是 Twisted core 中不支持的协议，因此 Daphne 对 twisted.web 进行了一些修改，以便也使用 Autobahn 来提供 WebSocket 支持。这里应该强调的是，Daphne 是一个非常小的代码块，主要负责将 HTTP 和 WebSocket 协议转换为队列上的通道消息，并处理从队列读取数据以将数据写回连接。</p>
+<p class="Para" id="Par17">第三个组件，通道“workers”，是运行 Django web 框架和通道应用程序的 Python 进程。这个应用程序负责监听并发送到适当的队列，通常对应用程序代码隐藏通道抽象。这里的神奇之处在于，常规的使用 Django 的代码库几乎不需要修改就可以使用，允许从非通道使用的 Django 部署无缝升级。</p>
+<p class="Para" id="Par18">第二个组件是栈中唯一的非 Python 组件:Redis。Redis 是一个开源的内存键值数据库，支持多种数据结构。虽然它的主要功能是作为一个数据库，但是它有许多属性使它可以作为一个消息代理，包括安全管理队列的能力。</p>
+<p class="Para" id="Par19">这些组件中的每一个都可以独立于其他组件进行部署，并实现通道拓扑的不同部分。它们一起构成了完整的 web 应用程序，Daphne 处理协议支持并与客户端对话，Django 处理业务逻辑，Redis 作为另外两个服务之间的消息代理提供服务。</p>
+
+<h2 class="Heading">消息代理和队列</h2>
+<p class="Para" id="Par20">Django 通道的一个关键设计特性是，当使用通道运行时，所有常规的 Django 应用程序都需要继续正常工作，但是增加了一个特性:独立于服务 HTTP 流量的 web 服务器进行水平伸缩的能力。本质上，以前阻塞 web 流量服务的常规 Django 应用程序必须突然变成异步的，允许 web 服务器在等待响应时避免阻塞。如何在不更改任何代码行的情况下实现这一点？</p>
+<p class="Para" id="Par21">关键是添加了一个消息代理。消息代理或排队系统是分布式系统中的常见组件。它的目的是将消息从多个消息生产者路由到不同数量的消息消费者，而不要求这些生产者或消费者知道如何找到彼此。</p>
+<p class="Para" id="Par22">通常消息代理使用一个 FIFO 队列作为他们的核心抽象。产生工作的系统组件通过将工作项添加到 FIFO 队列的后面来完成工作。这些项目由一个或多个“工作进程”从队列的前端取出，这些工作进程负责根据提交的工作采取一些行动。这个系统有很多优点:它可以用作服务发现工具，并且它还提供了消息发送者和消息接收者之间的有用的解耦。</p>
+<p class="Para" id="Par23">像这样的消息代理的优点是它分离了不同组件的运行时。在 WSGI 中，web 应用程序与 web 服务器的执行模型紧密耦合，因为 web 服务器需要调用一个 Python 函数，该函数将一直阻塞到执行完成。这种紧密集成意味着 web 服务器和 web 应用程序不能有不同的并发方法:最终都需要运行单线程同步代码。<sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source"> 1 </a> </sup></p>
+<p class="Para" id="Par25">通过在 web 服务器和 web 应用程序之间添加一个消息代理，每一个都可以有不同的执行范例。不仅如此，他们还可以使用任何允许他们向消息代理提交工作和从消息代理接收工作的范式。在这种情况下，Daphne(一个基于 Twisted 的异步 web 服务器)可以使用其异步编程模型与消息代理进行交互，而传统的单线程同步 Django 处理程序可以在 workers 中运行，而不会碍事。</p>
+<p class="Para" id="Par26">更重要的是，我们现在可以拥有比 web 服务器多得多的工作进程。这极大地提高了传统 web 应用程序的性能:应用程序的每次调用都可以在单独的进程中完成，而不是占用宝贵的时间来持有 Python 的全局解释器锁。</p>
+<p class="Para" id="Par27">这使得 Django 应用程序变得同步但并行。每个 Django 请求处理程序都可以是一个常规的同步阻塞 Python 函数，但是整个应用程序可以在任意多个进程中并行运行任意多个这样的函数。更重要的是，工作进程的数量可以动态扩展，并且与 web 服务器的数量无关。这允许应用程序的每个组件根据瓶颈位置进行独立的水平扩展，从而更有效地利用资源。</p>
+<p class="Para" id="Par28">消息代理是为基本同步的程序添加异步的常用工具。通过允许单线程同步代码的多个实例同时在不同的进程或线程中运行，无需从根本上重写应用程序就可以增加应用程序中的异步性。</p>
+<p class="Para" id="Par29">最重要的是，消息代理允许您避免担心如何协调这些多个并行的工作者。每个工作者就像在自己的小世界中一样，从队列中添加和删除数据，而不用担心数据来自哪里或去往哪里。消息代理负责确保尽可能多的工作人员能够访问数据并适当地处理数据。</p>
+<p class="Para" id="Par30">虽然消息代理不是万灵药，但是它们是在非并发编程模型中实现可伸缩性和并发性的一个很好的工具。</p>
+
+<h2 class="Heading">扭曲的分布式多层系统</h2>
+<p class="Para" id="Par31">Django Channels 不仅是部署可水平伸缩的 web 应用程序的有用工具，也是分布式多层软件系统的通用构造的有用示例。</p>
+<p class="Para" id="Par32">分布式多层软件系统是通过将系统的责任分成“层”来构建的，这些层使用某种消息总线在彼此之间进行通信。在使用 Django 通道的应用程序的情况下，这通常是 Daphne、Django 和用于持久存储 Django 模型的任何数据库(例如，MySQL 或 PostgreSQL)的三层架构，但是多层架构的想法更为普遍。</p>
+<p class="Para" id="Par33">像 Twisted 这样的异步网络框架通常是多层系统的关键组件。这在很大程度上是因为多层系统不可避免地会由于使用正式的或临时的 RPC(“远程过程调用”)机制而导致延迟。由于系统给定层中的每个节点都希望尽可能有效地使用系统资源，因此使用异步编程技术的多层系统比不使用异步编程技术的多层系统更具可伸缩性和效率。</p>
+<p class="Para" id="Par34">规范的多层架构将应用程序分为三层，每层负责应用程序的一个单独方面。通常，这涉及一个专门用于存储数据(数据库)的层，一个专门用于执行应用程序或业务逻辑的层，以及一个专门用于表示的层。这种模式非常常见，事实上非常常见的“模型-视图-控制器”模式与这种规范构造密切相关。</p>
+<p class="Para" id="Par35">当用 Twisted 编写多层应用程序时，有必要定义各层之间的通信机制。然而，在所有情况下，最终构建的都是某种形式的 RPC，允许单个层请求其他层工作。假设这些应用程序无论如何都需要一个 RPC 层，那么依靠某种标准的 RPC 机制将会为您节省大量的时间和精力。</p>
+<p class="Para" id="Par36">RPC 最常见的选择是 REST，鉴于 Twisted 对 HTTP 的出色支持，这是一个很好的选择，但是根据您的应用程序，任何数量的不同 RPC 机制都可能是明智的选择。这种架构的关键是知道 Twisted 应用程序设计的本质非常适合编写基于 RPC 的应用程序:一旦您的核心应用程序期望异步，添加更多的异步层通常是相对简单的。通过仔细的 RPC 选择和应用程序设计，允许应用程序的任意水平伸缩成为可能。世界上最大的 web 项目都是以这种风格构建的，并且知道 Twisted 为您自己提供了大量工具来拥抱它是很有用的。</p>
+
+<h2 class="Heading">现状和未来扩展</h2>
+<p class="Para" id="Par37">2016 年 9 月 9 日，Channels 被采纳为 Django 官方项目。这意味着它是在 Django 项目和 Django 软件基金会的支持下管理的，但它不是 Django 核心库的一部分。该项目仍在积极开发中，并已做好生产准备。</p>
+<p class="Para" id="Par38">它现在还支持大多数主要功能。HTTP/1.1、HTTP/2 和 WebSockets 都是完全支持的，尽管与 core Twisted 非常相似，但有些仅支持 HTTP/2 的特性还不被支持。Redis 被支持作为主要的通道后端，但是对于较小的部署也支持内存中后端。</p>
+<p class="Para" id="Par39">Django 频道的未来发展方向是多种多样的。作为部署并发 web 应用程序的复杂框架，有多个可能的扩展方向。额外的通道后端、替代的 ASGI 服务器，甚至不同 web 框架的兼容层:所有这些以及更多都可能是富有成效的增强方向。对替代协议的更广泛支持也可能对项目有一些价值。</p>
+<p class="Para" id="Par40">当然，理想的长期前景是采用 Django core 中的 Channels 模型作为默认的执行模型。这将在 Django 中为高度可伸缩的应用程序设计提供默认支持，帮助确保开发人员从第一天起就为未来的可伸缩性构建他们的应用程序。</p>
+
+<h2 class="Heading">摘要</h2>
+<p class="Para" id="Par41">在这一章中，我们介绍了 Django Channels，这是一个允许在并发、异步编程模型中使用 Django web 应用程序框架开发 web 应用程序的框架。我们讨论了通道的基本架构，并介绍了其构造块技术。然后，我们讨论了如何将这些构件重新用于任意多级分布式系统设计，以及如何设计这样一个系统来最大限度地使用 Twisted。最后，我们讨论了渠道的未来发展。</p>
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par24">这不是<em class="EmphasisTypeItalic ">所说的</em>真的:<code>twisted.web</code>，一个异步 web 服务器，不知何故能够运行同步阻塞的 WSGI 应用程序。它通过在一个后台线程中调用 WSGI 应用程序并使用一个<code>Deferred</code>将调用的结果传递回服务器来实现这一点。这确实可行，但这仍然意味着业务逻辑的核心被分派到后台线程的同步池中:从伸缩的角度来看，这并不理想！</p>
+
+ 
+
+</aside>
+
+</body>
+</html>

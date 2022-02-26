@@ -1,0 +1,625 @@
+<html lang="en">
+<head><title>Push Data to Browsers and Micro-services with WebSocket</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">8.使用 WebSocket 将数据推送到浏览器和微服务</h1>
+
+ 
+<!--End Abstract--><h2 class="Heading">为什么选择 WebSocket？</h2>
+<p class="Para" id="Par2">WebSocket 一开始是 HTTP AJAX 请求的竞争对手。当我们需要来自浏览器的实时通信或来自服务器的数据推送时，它们成为长轮询或 comet 等遗留解决方案的良好替代方案。因为它们使用的是持久连接，没有报头，所以如果有大量小消息要交换，它们是最快、最轻的选择。</p>
+<p class="Para" id="Par3">然而今天，HTTP2 正被越来越多的人采用，并且确实有持久的连接和数据推送。</p>
+<p class="Para" id="Par4">那么为什么选择 WebSocket 呢？</p>
+<p class="Para" id="Par5">首先，WebSocket APIs 的目标是应用程序代码，而不仅仅是服务器代码。因此，在所有实现中，您都可以挂钩连接生命周期、对断开连接做出反应、将数据附加到会话等。一个非常方便的功能，可以创建健壮的交互和愉快的用户体验。</p>
+<p class="Para" id="Par6">然后，虽然 HTTP2 确实有压缩的头，但 WebSocket 根本没有头，这使得整个占用空间更低。事实上，HTTP2 实现甚至强制加密非敏感数据，而在 WebSocket 中，您可以选择何时何地使用机器资源，以及是否激活 SSL。</p>
+<p class="Para" id="Par7">更有甚者，HTTP2 服务器倾向于使用 push 发送静态资源(CSS、images、JS 等。)到浏览器，但它通常不用于推送应用程序数据。这就是 WebSocket 大放异彩的地方:向用户推送通知、传播事件、发出变更信号。。。</p>
+<p class="Para" id="Par8">然而，WebSocket 有一个奇怪的地方:它不与域名绑定，浏览器不需要任何特殊的设置来做 CORS。实际上，您可以在没有任何警告的情况下从网页连接到您计算机上的本地 WebSocket 服务器。它可以被视为一个优点，也可以被视为一个缺点，这取决于你需要做什么。</p>
+<p class="Para" id="Par9">所有这些特性使 WebSocket 成为你的网站通知、聊天、交易、多人游戏或实时图表的绝佳工具。不用多说，您不必局限于此，因为您可以利用它作为所有组件之间的链接，并使它成为协调整个系统的通信层。</p>
+<p class="Para" id="Par10">这意味着您的 web 服务器可以通过 WebSocket 与您的缓存进程或身份验证平台对话。或者您可以管理一群物联网<sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source"> 1 </a> </sup>设备。毕竟，Raspberry Pi 拥有事实上的 Python 支持。</p>
+<p class="Para" id="Par11">总的来说，WebSocket 现在是一个安全的赌注，因为它可以在大多数主流浏览器中使用，包括 IE10。据 caniuse.com 称，这大约占了 94%的市场份额。最坏的情况是，你可以为剩下的几个浏览器找到垫片。由于 WebSocket 和 HTTP 握手是兼容的，它可能在任何允许通过 HTTP 的网络上工作。您甚至可以在两种协议之间共享 80 和 443 端口。</p>
+
+<h2 class="Heading">网络插座和扭曲</h2>
+<p class="Para" id="Par12">在服务器端，WebSocket 现在得到了流行语言的广泛支持，但是由于持久连接，它确实需要异步编程。由于您最终可能会同时连接许多客户端，线程可能不是编写 WebSocket 服务器的最佳解决方案。然而，异步 IO 是一个完美的选择；在这方面，Twisted 是一个受欢迎的平台。</p>
+<p class="Para" id="Par13">更好的消息是，您可以在浏览器之外使用 WebSocket，这样您的服务器上的所有组件都可以实时地相互对话。这将允许您创建自己的微服务架构，将特性解耦以分布在更小的组件上，或者传播信息而不是查询中央数据库中的所有信息。</p>
+<p class="Para" id="Par14">为了演示如何在扭曲的环境中受益于 WebSocket，我们将使用 Autobahn 生态系统。Autobahn 是 MIT 许可下的库集合，用不同的语言编写，允许你创建 WebSocket 客户端和服务器。它还附带了一个测试套件，用于检查任何 WebSocket 系统的标准遵从性水平。</p>
+<p class="Para" id="Par15">还有更多。</p>
+<p class="Para" id="Par16">当然，您可以使用 WebSocket 构建自己的通信约定；高速公路肯定会帮助你做到这一点。但是最终你会像其他人一样，重新发明一个(很可能是方形的)轮子。</p>
+<p>事实上，WebSocket 用例可以大致分为两类:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par18">调用远程代码并获得结果。比如更好、更快、更轻便的 AJAX。嗯，这已经做了几十年了，它被称为“RPC”，用于远程过程调用。</p></li>
+<li><p class="Para" id="Par19">发送信息给系统的其他部分，有事情发生了。这里也一样，它实际上是一种非常常见的模式，通常称为“发布/订阅”，用于发布/订阅。</p></li>
+</ul>
+
+<p class="Para" id="Par20">稍后，我们将详细介绍这对您意味着什么。但是现在，重要的部分是，正确地做到这一点需要大量设计良好的代码来处理序列化、身份验证、路由、错误处理和边缘情况。</p>
+<p class="Para" id="Par21">了解到这一点，Autobahn 的作者决定为“WebSocket 应用程序消息传递协议”<sup> <a epub:type="noteref" href="#Fn2" id="Fn2_source"> 2 </a> </sup>创建一个更高级的协议，称为 WAMP。这是一个由 IANA[]注册的文档化的开放标准，如果您愿意，它基本上可以为您完成所有繁重的工作。</p>
+<p class="Para" id="Par22">最棒的是，你可以在任何支持 WebSocket 的地方使用 WAMP，这意味着几乎可以在任何地方，做任何事情。不需要这里用 HTTP，那里用 MQTT，剩下的用 AMQP。一个协议来统治他们。更少的麻烦。</p>
+<p>幸运的是，Python Autobahn 库使用 Twisted 同时支持原始 WebSocket 和 WAMP。这就是我们在这一章将要经历的。因此，在我们开始之前，安装 autobahn 包，例如使用 pip:</p>
+<pre>pip install autobahn[twisted]
+
+</pre>
+<p class="Para" id="Par24">像往常一样，建议您为此创建一个 Python 3 virtualenv。我们将在本章使用的 Autobahn 版本——17 . 10 . 1——无论如何都将与 Python 2.7 和 3.3+一起工作。它甚至可以在 PyPy 和 Jython 上运行，并支持 asyncio，以防您不想只使用 Twisted。当然，对于这一章，我们将坚持使用 Twisted，用 Python 3 举例。</p>
+<p class="Para" id="Par25">由于 WebSocket 是一种有趣的网站前端技术，我们稍后将使用一点 JavaScript。然而，WebSocket 并不要求 web 是有用的，因为 web 本身就是一个在服务器进程之间进行通信的良好协议。</p>
+
+<h2 class="Heading">原始 WebSocket，从 Python 到 Python</h2>
+<p class="Para" id="Par26">来自网络世界的“hello world”，作为一个 echo 服务器，是我们首先要做的。虽然 Twisted 现在支持<code>async</code> / <code>await</code>构造，但我们将坚持使用协程来允许更广泛的 Python 3 支持。</p>
+<p>下面是使用 autobahn 的 WebSocket echo 服务器的样子:</p>
+<pre>import uuid
+
+from autobahn.twisted.websocket import (
+    WebSocketServerProtocol,
+    WebSocketServerFactory
+)
+
+class EchoServerProtocol(WebSocketServerProtocol):
+
+    def onConnect(self, request):
+        """Called when a client is connecting to us"""
+        # Print the IP address of the client this protocol instance is serving
+        print(u"Client connecting:{0}".format(request.peer))
+
+    def onOpen(self):
+        """Called when the WebSocket connection has been opened"""
+        print(u"WebSocket connection open.")
+
+    def onMessage(self, payload, isBinary):
+        """Called for each WebSocket message received from this client
+
+            Params:
+
+               payload (str|bytes): the content of the message
+               isBinary (bool): whether the message contains (False) encoded text
+                              or non-textual data (True). Default is False.
+        """
+        # Simply prints any message we receive
+        if isBinary:
+            # This is a binary message and can contain pretty much anything.
+            # Here we recreate the UUID from the bytes the client sent us.
+            uid=uuid.UUID(bytes=payload)
+            print(u"UUID received:{}".format(uid))
+        else:
+            # This is encoded text. Please note that it is NOT decoded for you,
+            # isBinary is merely a courtesy flag manually set by the client
+            # on each message. You must know the charset used (here utf8),
+            # and call ".decode()" on the bytes object to get a string object.
+           print(u"Text message received:{}".format(payload.decode( 'utf8')))
+
+        # It's an echo server, so let's send back everything it receives
+        self.sendMessage(payload, isBinary)
+
+    def onClose(self, wasClean, code, reason):
+        """Called when the WebSocket connection for this client closes
+
+
+
+
+            Params:
+
+                wasClean (bool): whether we were told the connection was going
+                                to be closed or if it just happened.
+                code (int): any code among WebSocketClientProtocol.CLOSE_*
+                reason (str): a message stating the reason the connection
+                              was closed, in plain English.
+        """
+        print(u"WebSocket connection closed:{0}".format(reason))
+
+if __name__ == '__main__':
+
+    from twisted.internet import reactor
+
+    # The WebSocket protocol netloc is WS. So WebSocket URLs look exactly
+    # like HTTP URLs, but replacing HTTP with WS.
+    factory=WebSocketServerFactory(u"ws://127.0.0.1:9000")
+    factory.protocol=EchoServerProtocol
+
+    print(u"Listening on ws://127.0.0.1:9000")
+    reactor.listenTCP(9000,  factory)
+    reactor.run()
+
+
+
+
+</pre>
+<p>在终端中运行它，只需执行以下操作:</p>
+<pre>$ python echo_websocket_server.py
+Listening on ws://127.0.0.1:9000
+
+</pre>
+<p class="Para" id="Par29">显然，假设“echo_websocket_server.py”是您给脚本起的名字。</p>
+<p>下面是使用 autobahn 的 WebSocket echo 客户端的样子:</p>
+<pre>
+# coding: utf8
+
+import uuid
+
+from autobahn.twisted.util import sleep
+from autobahn.twisted.websocket import (
+    WebSocketClientProtocol,
+    WebSocketClientFactory
+)
+
+from twisted.internet.defer import Deferred, inlineCallbacks
+
+class EchoClientProtocol(WebSocketClientProtocol):
+
+    def onConnect(self, response):
+        # Print the server ip address we are connected to
+        print(u"Server connected:{0}".format(response.peer))
+
+    @inlineCallbacks
+    def onOpen(self):
+
+        print("WebSocket connection open.")
+
+        # Send messages every second
+        i=0
+        while True:
+
+            # Send a text message. You MUST encode it manually.
+            self.sendMessage(u"© Hellø wørld{}!".format(i).encode('utf8'))
+            # If you send non-text data, signal it by setting "isBinary". Here
+            # we create a unique random ID, and send it as bytes.
+            self.sendMessage(uuid.uuid4().bytes, isBinary=True)
+            i+=1
+            yield sleep(1)
+
+    def onMessage(self, payload, isBinary):
+        # Let's not convert the messages so you can see their raw form
+        if isBinary:
+            print(u"Binary message received:{!r}bytes".format(payload))
+        else:
+            print(u"Encoded text received:{!r}".format(payload))
+
+    def onClose(self, wasClean, code, reason):
+        print(u"WebSocket connection closed:{0}".format(reason))
+
+
+
+
+
+
+if __name__ == '__main__':
+
+    from twisted.internet import reactor
+
+    factory=WebSocketClientFactory(u"ws://127.0.0.1:9000")
+    factory.protocol=EchoClientProtocol
+
+    reactor.connectTCP(u"127.0.0.1",9000, factory)
+    reactor.run()
+
+</pre>
+<p>通过执行以下操作在第二个终端中运行代码:</p>
+<pre>python echo_websocket_client.py
+
+</pre>
+<p class="Para" id="Par32">在启动服务器之后运行客户机是很重要的，因为这些简单的例子不会实现复杂的连接检测或重新连接。</p>
+<p>紧接着，您将在客户端控制台上看到类似这样的内容:</p>
+<pre>WebSocket connection open.
+Encoded text received: b'\xc2\xa9 Hell\xc3\xb8 w\xc3\xb8rld 0 !'
+Binary message received: b'\xecA\xd9u\xa3\xa1K\xc3\x95\xd5\xba~\x11ss\xa6' bytes
+Encoded text received: b'\xc2\xa9 Hell\xc3\xb8 w\xc3\xb8rld 1 !'
+Binary message received: b'\xb3NAv\xb3OOo\x97\xaf\xde\xeaD\xc8\x92F' bytes
+Encoded text received: b'\xc2\xa9 Hell\xc3\xb8 w\xc3\xb8rld 2 !'
+Binary message received: b'\xc7\xda\xb6h\xbd\xbaC\xe8\x84\x7f\xce:,\x15\xc4$' bytes
+Encoded text received: b'\xc2\xa9 Hell\xc3\xb8 w\xc3\xb8rld 3 !'
+Binary message received: b'qw\x8c@\xd3\x18D\xb7\xb90;\xee9Y\x91z' bytes
+
+</pre>
+<p>在服务器控制台上:</p>
+<pre>WebSocket connection open.
+Text message received: © Hellø wørld 0 !
+UUID received: d5b48566-4b20-4167-8c18-3c5b7199860b
+Text message received: © Hellø wørld 1 !
+UUID received: 3e1c0fe6-ba73-4cd4-b7ea-3288eab5d9f6
+Text message received: © Hellø wørld 2 !
+UUID received: 40c3678a-e5e4-4fce-9be8-6c354ded9cbc
+Text message received: © Hellø wørld 3 !
+UUID received: eda0c047-468b-464e-aa02-1242e99a1b57
+
+</pre>
+<p class="Para" id="Par35">这意味着服务器和客户端正在交换消息。</p>
+<p class="Para" id="Par36">还请注意，在服务器示例中，我们只回答了消息。尽管如此，即使我们没有收到任何消息，也可以调用“self.sendMessage()”，从而将数据推送到客户端。</p>
+<p class="Para" id="Par37">让我们确实这样做，但是用一个 web 例子。</p>
+
+<h2 class="Heading">原始 WebSocket，介于 Python 和 JavaScript 之间</h2>
+<p class="Para" id="Par38">将数据推送到浏览器是 WebSocket 的一个经典用例。我们有限的页面不允许我们展示传统的聊天例子。然而，任何聊天都需要标明有多少人在线。下面是一个简单的实现可能的样子。</p>
+<p>首先，让我们创建一个 Python 服务器。</p>
+<pre>from autobahn.twisted.websocket import (
+    WebSocketServerProtocol,
+    WebSocketServerFactory
+)
+
+class SignalingServerProtocol(WebSocketServerProtocol):
+
+    connected_clients=[]
+
+    def onOpen(self):
+        # Every time we receive a WebSocket connection, we store the
+        # reference to the connected client in a class attribute
+        # shared among all Protocol instances. It’s a naive implementation
+        # but perfect as a simple example.
+        self.connected_clients.append(self)
+        self.broadcast(str(len(self.connected_clients)))
+
+    def broadcast(self, message):
+        """ Send a message to all connected clients
+
+            Params:
+                message (str): the message to send
+        """
+        for client in self.connected_clients:
+            client.sendMessage(message.encode('utf8'))
+
+    def onClose(self, wasClean, code, reason):
+        # If a client disconnect, we remove the reference from the class
+        # attribute.
+        self.connected_clients.remove(self)
+        self.broadcast(str(len(self.connected_clients)))
+
+if __name__ == '__main__':
+
+    from twisted.internet import reactor
+
+    factory = WebSocketServerFactory(u"ws://127.0.0.1:9000")
+    factory.protocol = SignalingServerProtocol
+
+    print(u"Listening on ws://127.0.0.1:9000")
+    reactor.listenTCP(9000, factory)
+    reactor.run()
+
+</pre>
+<p>再次运行它:</p>
+<pre>python signaling_websocket_server.py
+
+</pre>
+<p>现在是 HTML + JS 部分:</p>
+<pre>&lt;!DOCTYPEhtml&gt; &lt;html&gt;&lt;head&gt;&lt;/head&gt;&lt;body&gt;
+
+&lt;h1&gt;Connected users: &lt;span id="count"&gt;...&lt;/span&gt;&lt;/h1&gt;
+
+// Short url to a CDN version of the autobahn.js lib
+// Visit https://github.com/crossbario/autobahn-js
+// for the real deal
+&lt;script src="http://goo.gl/1pfDD1"&gt;&lt;/script&gt;
+
+&lt;script&gt;
+
+
+  /* If you are using an old browser, this part of the code may look
+    different. This will work starting from IE11
+    and will require vendor prefixes or shims in other cases.*/
+  var sock = new WebSocket("ws://127.0.0.1:9000");
+
+  /* Like with the Python version, you can then hook on sock.onopen() or
+    sock.onclose() if you wish. But for this example with only need
+    to react to receiving messages: */
+
+ sock.onmessage = function(e){
+   var span = document.getElementById('count');
+   span.innerHTML=e.data;
+  }
+
+&lt;/script&gt;
+&lt;/body&gt;&lt;/html&gt;
+
+</pre>
+<p class="Para" id="Par42">您所要做的就是在您的 web 浏览器中用这个 HTML 代码打开文件。</p>
+<p class="Para" id="Par43">如果您在浏览器中打开这个文件，您将会看到一个页面，上面写着“连接的用户:x”，每当您打开一个新的标签页或者关闭一个标签页时，x 都会进行调整。</p>
+<p class="Para" id="Par44">您会注意到，即使有严格的 CORS 策略的浏览器，比如 Google Chrome，也不会像对待 AJAX 请求那样阻止来自“file://”协议的连接。WebSocket 可以在任何具有远程或本地域名的上下文中工作，即使文件不是由 web 服务器提供的。</p>
+
+<h2 class="Heading">WAMP 提供更强大的 WebSocket</h2>
+<p>WebSocket 是一个简单而强大的工具；不过，水平还是挺低的。如果您使用 WebSocket 创建一个成熟的系统，您最终会编写:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par46">一种将两个消息配对的方法，模拟 HTTP 请求/响应循环。</p></li>
+<li><p class="Para" id="Par47">一些可交换的后端用于序列化，使用 JSON 或 msgpack，或者其他。</p></li>
+<li><p class="Para" id="Par48">管理错误的约定和调试错误的工作流。</p></li>
+<li><p class="Para" id="Par49">样板文件，用于广播消息，仅向一部分客户端广播。</p></li>
+<li><p class="Para" id="Par50">身份验证，以及将您的会话 ID 从 HTTP cookie/token 连接到 WebSocket 的东西。</p></li>
+<li><p class="Para" id="Par51">一个许可系统，让所有的客户不能做或看到一切。</p></li>
+</ul>
+
+<p class="Para" id="Par52">你可能已经重写了一个非标准的、较少记载的、未经测试的 WAMP 的替代品。</p>
+<p>WAMP 是所有这一切的答案，以一种干净的和被证明的方式。它运行在 WebSocket 之上，所以它共享了它的所有特性，继承了它的所有优点。它还增加了许多好处:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par54">您可以定义函数并在网络上公开声明它们。然后，任何客户端都可以从任何地方(是的，远程)调用这些函数并获得结果。这是 WAMP 的 RPC 部分，你可以把它看作是 AJAX 请求的替代品，或者更简单的 CORBA/XMLRPC/SOAP。</p></li>
+<li><p class="Para" id="Par55">您可以定义事件。一些代码可以从任何地方(再次，是的，远程)说“嘿，我对那个事件感兴趣”。现在，任何地方的另一个代码都可以说“嘿，它发生了”，所有感兴趣的客户端都会得到通知。这是 WAMP 的酒吧/酒馆部分，你可以像使用兔子一样更容易地使用它。</p></li>
+<li><p class="Para" id="Par56">所有错误都会自动通过网络传播。因此，如果您的客户机 X 调用客户机 Y 上的一个函数失败，您将在客户机 X 上得到错误。</p></li>
+<li><p class="Para" id="Par57">标识和认证是规范的一部分，可以融入您自己的 HTTP 会话机制。</p></li>
+<li><p class="Para" id="Par58">一切都有命名空间。您可以对它们进行过滤，使用通配符，设置权限，甚至添加负载平衡。</p></li>
+</ul>
+
+<p class="Para" id="Par59">在这短短的一章中，我们不会看到大部分内容，但至少我会尝试让您体验一下 RPC 和 PUB/SUB 能为您做些什么。</p>
+<p class="Para" id="Par60">WAMP 是一种路由协议，这意味着每次您进行 WAMP 调用时，它不会直接进入将处理它的代码。取而代之的是，它通过一个 WAMP 兼容的路由器，然后确保消息在适当的代码段之间来回分发。</p>
+<p class="Para" id="Par61">从这个意义上说，WAMP 不是一个客户端-服务器架构:任何进行 WAMP 调用的代码都是客户端。因此，你的所有代码，包括网页、服务器上的进程、外部服务、任何说 WAMP 语的东西，都将成为客户端——或 WAMP 路由器——相互通信。</p>
+<p>这使得 WAMP 路由器成为单点故障和潜在的性能瓶颈。幸运的是，参考实现 Crossbar.io 是一个健壮、快速的 Twisted 软件。这也意味着您可以用一个简单的 pip 命令来安装它，要运行我们的下一个示例，您需要这样做:</p>
+<pre>pip install crossbar
+
+</pre>
+<p class="Para" id="Par63">如果您使用的是 Windows，可能需要 win32api 依赖项。在这种情况下，在启动之前安装它。<sup> <a epub:type="noteref" href="#Fn3" id="Fn3_source"> 3 </a> </sup></p>
+<p>命令栏现在应该对你可用<sup> <a epub:type="noteref" href="#Fn4" id="Fn4_source"> 4 </a> </sup>:</p><pre>$ crossbar version
+     __  __  __  __  __  __      __    __
+    /  `|__)/  \/__`/__`|__) /\ |__) |/  \
+    \__,|  \\__/.__/.__/|__)/~~\|  \.|\__/
+
+ Crossbar.io      : 17.11.1 (Crossbar.io COMMUNITY)
+   Autobahn       : 17.10.1 (with JSON, MessagePack, CBOR, UBJSON)
+   Twisted        : 17.9.0-EPollReactor
+   LMDB           : 0.93/lmdb-0.9.18
+   Python         : 3.6.2/CPython
+ OS               : Linux-4.4.0-98-generic-x86_64-with-Ubuntu-16.04-xenial
+Machine           : x86_64
+Release key       : RWT/n6IQ4dKesCP8YwwJiWH30ST8eq5D21ih4EFbJZazzsqEX6CmaT3k
+
+</pre>
+
+<p>Crossbar.io 戴着很多帽子，可以做这么多事情，所以需要一个配置文件来告诉你想做什么。谢天谢地，它可以自动生成一个基本的:</p>
+<pre>crossbar init
+
+</pre>
+<p class="Para" id="Par66">这将创建一个<code>web</code>和<code>.crossbar</code>目录，以及一个<code>README</code>文件。你可以忽略，甚至删除<code>web</code>和<code>README</code>。我们感兴趣的是已经为我们创造的<code>.crossbar</code> / <code>config.json</code>。您不需要修改它来运行这个例子，因为默认情况下它只是“允许一切”如果你打开它，你会发现大量的设置，如果没有上下文，将很难理解。要了解 WAMP 的基本情况，你不需要挖那么深，所以我们将继续。</p>
+<p>我们清单上的下一步就是运行纵横制路由器。您需要在包含。纵横制目录:</p>
+<pre>$ crossbar start
+2017-11-23T19:06:43+0200 [Controller  11424] New node key pair generated!
+2017-11-23T19:06:43+0200 [Controller  11424] File permissions on node public key fixed!
+2017-11-23T19:06:43+0200 [Controller  11424] File permissions on node private key fixed!
+2017-11-23T19:06:43+0200 [Controller  11424]     __  __  __  __  __  __      __    __
+
+2017-11-23T19:06:43+0200 [Controller  11424]    /  `|__)/  \/__`/__`|__) /\ |__) |/  \
+2017-11-23T19:06:43+0200 [Controller  11424]    \__,|  \\__/.__/.__/|__)/~~\|  \.|\__/
+2017-11-23T19:06:43+0200 [Controller  11424]
+2017-11-23T19:06:43+0200 [Controller  11424] Version:   Crossbar.io COMMUNITY 17.11.1
+2017-11-23T19:06:43+0200 [Controller  11424] Public Key: 81da0aa76f36d4de2abcd1ce5b238d00a
+...
+
+</pre>
+<p class="Para" id="Par68">你可以把 Crossbar.io 想象成 Apache 或 Nginx:它是一个你配置然后运行的软件，其余的代码围绕它运行。Crossbar.io 实际上完全有能力成为静态 web 服务器、WSGI 服务器，甚至是进程管理器。但我们只是要利用它的 WAMP 功能。为此，您不需要做任何其他事情。让它在后台运行，专注于你客户的代码。</p>
+<p class="Para" id="Par69">WAMP 的美妙之处在于客户们不需要互相认识。他们只需要知道路由器。默认情况下，它监听<code>localhost:8080</code>并定义一个名为<code>realm1</code>的“领域”(一组可以互相看到的客户端)。因此，我们使用路由器所要做的就是使用该信息连接到它。</p>
+<p class="Para" id="Par70">为了说明 WAMP 客户不需要互相认识，或者说明您不再处于客户机/服务器体系结构中，在我们的第一个例子中，我将使用两个网页。</p>
+<p class="Para" id="Par71">一页将有一个输入框和一个“总和”按钮。另一个是另一个输入字段，它声明一个<code>sum()</code>函数可用于远程调用。当您单击“sum”按钮时，它会将第一个输入的值发送到第二个页面，第二个页面会在收到的值和本地值上调用<code>sum()</code>，然后发送回结果。</p>
+<p class="Para" id="Par72"><em class="EmphasisTypeItalic ">无需编写任何服务器端代码</em></p>
+<p>第一页，第一个客户:</p>
+<pre>&lt;!DOCTYPEhtml&gt; &lt;html&gt;&lt;head&gt;&lt;/head&gt;&lt;body&gt;
+
+   &lt;form name="sumForm"&gt;&lt;input type="text"name="number"value="3"&gt;&lt;/form&gt;
+
+    &lt;script src="http://goo.gl/1pfDD1"&gt;&lt;/script&gt;
+
+    &lt;script&gt;
+
+    // Connection to the WAMP router
+    var connection = new autobahn.Connection({
+      url:"ws://127.0.0.1:8080/ws",
+      realm:"realm1"
+    });
+
+    // Callback for when the connection is established
+    connection.onopen = function (session,details){
+      // We register a function under the name "sum", so that any WAMP
+      // client on "realm1" can call it remotly. This is RPC.
+      session.register('sum', function(a){
+        // It's just a regular function, really. But the parameters and
+        // return value must be serializable. By default to JSON.
+        return parseInt(a) + parseInt(document.sumForm.number.value);
+      });
+    }
+
+    // Start the connection
+    connection.open();
+
+  &lt;/script&gt;
+&lt;/body&gt;&lt;/html&gt;
+
+</pre>
+<p>如果在 web 浏览器中打开包含此代码的文件，您会注意到 Crossbar.io 控制台记录了一些关于新连接的客户端的信息:</p>
+<pre>2017-11-23T20:11:41+0200 [Router 13613] session "5770155719510781" joined realm "realm1"
+
+</pre>
+<p>现在是第二个页面，另一个 JS 客户端:</p>
+<pre>&lt;!DOCTYPEhtml&gt; &lt;html&gt;&lt;head&gt;&lt;/head&gt;&lt;body&gt;
+
+&lt;form name="sumForm"method="post" &gt;
+  &lt;input type="text"name="number"value="5"&gt;
+  &lt;button name="sumButton"&gt;Sum!&lt;/button&gt;
+  &lt;span id="sumResult"&gt;...&lt;/span&gt;
+
+&lt;/form&gt;
+
+
+&lt;script src="http://goo.gl/1pfDD1"&gt;&lt;/script&gt;
+
+&lt;script&gt;
+
+
+  var connection = new autobahn.Connection({
+    url:"ws://127.0.0.1:8080/ws",
+    realm:"realm1"
+  });
+
+  connection.onopen = function (session,details){
+    // When we submit the form (e.g: click on the button), call "sum()"
+    // We don't need to know where "sum()" is declared or how it will run,
+    // just that something exists under this name.
+    document.sumForm.addEventListener('submit', function(e){
+      e.preventDefault();
+      // The first parameter is the namespace of the function. The second is
+      // the arguments passed to the function. This returns a promise which
+      // we use to set the value of our span when the results comes back
+      session.call('sum',[document.sumForm.number.value]).then(
+        function(result){
+          document.getElementById('sumResult').innerHTML = result;
+      });
+    })
+  }
+  connection.open();
+
+&lt;/script&gt;
+
+&lt;/body&gt;&lt;/html&gt;
+
+
+
+
+</pre>
+<p class="Para" id="Par76">路由器再次做出反应。</p>
+<p class="Para" id="Par77">你现在可以按“总和！”按钮，它将愉快地调用第二页中的代码，并几乎立即得到结果。当然，这也适用于 Python 和其他语言。显然，这个例子是一个基本的例子，没有考虑健壮性或安全性。但我希望你能了解大致情况。您可以使用这种机制(路由 RPC)在连接到路由器的任何服务器上的任何浏览器或任何进程上定义和调用代码。</p>
+<p class="Para" id="Par78">现在 RPC 本身是有用的，但是它的小兄弟 PUB/SUB 本身是另一个很好的工具。为了演示它，我将添加一个 Python 客户机(它实际上位于 Crossbar 服务器上)。</p>
+<p>这个 Python 客户机调查一个目录，每秒扫描其中的所有文件。对于在目录中找到的每个文件扩展名，它都会发送一个事件，其中包含所有匹配文件的列表。没用？也许吧。很酷？当然可以！</p>
+<pre>import os
+
+from twisted.internet.defer import inlineCallbacks
+from twisted.logger import Logger
+
+from autobahn.twisted.util import sleep
+from autobahn.twisted.wamp import ApplicationSession
+from autobahn.twisted.wamp import ApplicationRunner
+
+class DirectoryLister(ApplicationSession):
+
+    log = Logger()
+
+    @inlineCallbacks
+    def onJoin(self, details):
+        while True:
+
+            # List files and group them by extension
+            files = {}
+            for f in os.listdir('.'):
+                file, ext = os.path.splitext(f)
+                if ext.strip():
+                    files.setdefault(ext, []).append(f)
+
+            # Send one event named "filewithext.xxx" for each file extension
+            # with "xxx" being the extension. We attach the list of files
+            # to the events so that every clients interested in the event
+            # can get the file list.
+            # This is the "publish" part of "PUB/SUB".
+            for ext, names in files.items():
+                # Note that there is no need to declare the event before
+                # using it. You can publish events as you go.
+                yield self.publish('filewithext' +ext , names)
+
+            yield sleep(1)
+
+
+# The ApplicationRunner will take care starting everything for us.
+
+if __name__ == '__main__':
+    runner=ApplicationRunner(url=u"ws://localhost:8080/ws", realm=u"realm1")
+    print(u"Connecting to ws://localhost:8080/ws")
+    runner.run(DirectoryLister)
+
+</pre>
+<p>像以前一样运行代码，使用:</p>
+<pre>python directory_lister.py
+
+
+
+
+</pre>
+<p class="Para" id="Par81">它将开始列出当前目录中的所有内容，并发布关于它找到的文件的事件。</p>
+<p>现在我们需要一个客户来表明它对这些事件感兴趣。我们可以创建一个 Python 或者 JS。因为在 WAMP 一切都是客户端，所以让我们创建一个 JS 客户端来查看两种语言的客户端。</p>
+<pre>&lt;!DOCTYPEhtml&gt; &lt;html&gt;&lt;head&gt;&lt;/head&gt;&lt;body&gt;
+
+  &lt;div id="files"&gt;...&lt;/div&gt;
+
+  &lt;script src="http://goo.gl/1pfDD1"&gt;&lt;/script&gt;
+
+  &lt;script&gt;
+
+    // Connection to the WAMP router
+    var connection = new autobahn.Connection({
+      url:"ws://127.0.0.1:8080/ws",
+      realm:"realm1"
+    });
+
+    connection.onopen = function (session,details){
+
+      // Populate the HTML page with a list of files
+      var div=document.getElementById('files');
+      div.innerHTML="";
+      function listFile(params,meta,event){
+        var ul=document.getElementById(event.topic);
+        if (!ul){
+          div.innerHTML += "&lt;ul id='" + event.topic + "'&gt;&lt;/ul&gt;";
+          ul=document.getElementById(event.topic);
+        }
+        ul.innerHTML="";
+        params[0].forEach(function(f){
+          ul.innerHTML += "&lt;li&gt;" + f + "&lt;/li&gt;";
+        })
+      }
+
+      // We tell the router we are interested in events with this name.
+      // This is the "subscribe" part of "PUB/SUB".
+      session.subscribe('filewithext.py',listFile);
+      // Any client, like this Web page, can subscribe to an arbitrary number
+      // of events. So here we say we are interested in events about files
+      // with the ".py" extension and the ".txt" extension.
+      session.subscribe('filewithext.txt',listFile);
+    }
+
+    connection.open();
+
+  &lt;/script&gt;
+&lt;/body&gt;&lt;/html&gt;
+
+</pre>
+<p class="Para" id="Par83">在我的目录中，我至少有一个扩展名为. py 的文件和一个扩展名为<code>.html</code>的文件:我的两个客户机。为了便于演示，我将在它们旁边创建一个名为<code>empty.txt</code>的空文本文件。这样我们每秒钟至少应该有三个事件。</p>
+<p>如果您以网页形式打开它，您会注意到它会开始列出如下文件:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par85"><code>empty.txt</code></p></li>
+<li><p class="Para" id="Par86"><code>directory_lister.py</code></p></li>
+</ul>
+
+<p class="Para" id="Par87">如果你添加或删除文件，你会看到实时的变化。如果您使用不同的订阅集创建一个新的 JS 客户机，它将显示不同的文件列表。</p>
+
+<h2 class="Heading">摘要</h2>
+<p class="Para" id="Par88">如你所料，我们只触及了 WebSocket、Twisted、Autobahn 和 WAMP 的皮毛。</p>
+<p class="Para" id="Par89">试着编辑给定的例子，让它们做更多的事情，或者把它们组合起来，以了解正在发生的事情。为了更好地使用这段代码，您应该在其中添加一些日志记录。</p>
+<p>对于 WebSocket 示例，在<code>if __name__ == "__main__"</code>部分，添加:</p>
+<pre>import sys
+from twisted.python import log
+
+log.startLogging(sys.stdout)
+...
+
+</pre>
+<p>对于 WAMP 的例子，在应用程序会话类的主体中:</p>
+<pre>from twisted.logger import Logger
+...
+
+class TheAppClass(ApplicationSession):
+
+    log=Logger()
+    ...
+
+</pre>
+<p>如果你想进一步探索，这里有一些想法:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par93">将示例转换为使用<code>async</code> / <code>await</code>构造，以获得更现代的体验。</p></li>
+<li><p class="Para" id="Par94">尝试其他形式的消息，如流。</p></li>
+<li><p class="Para" id="Par95">通过利用自动连接或负载平衡为您的代码提供更高的可靠性(仅限扭曲/ WAMP)。</p></li>
+<li><p class="Para" id="Par96">用另一种语言编写客户机:Java、C#、PHP。你有很多流行平台的 WebSocket 和 WAMP 客户端。</p></li>
+<li><p class="Para" id="Par97">寻找安全特性:SSL、认证、权限。。。他们很难建立，但相当坚实。</p></li>
+<li><p class="Para" id="Par98">了解更多 Crossbar.io(也是扭曲的):进程管理，WSGI 服务器，静态文件处理。你会对它能做的所有事情感到惊讶。</p></li>
+</ul>
+
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par01">物联网。</p>
+
+ 
+
+<a href="#Fn2_source">2</a><p class="Para" id="Par02">不要与 AJAX 出现之前流行的“Windows Apache MySQL PHP”相混淆。</p>
+
+ 
+
+<a href="#Fn3_source">3</a><p class="Para" id="Par03">项目页面上列出了二进制:<a href="https://github.com/mhammond/pywin32"> <code>https://github.com/mhammond/pywin32</code> </a>。</p>
+
+ 
+
+<a href="#Fn4_source">4</a><p class="Para" id="Par04">如果你不能或者不想安装一个 crossbar 实例，你可以在<a href="https://crossbar.io/docs/Demo-Instance/"> <code>https://crossbar.io/docs/Demo-Instance/</code> </a>上找到一个用于演示的。在这种情况下，你可以用它来代替“ws://127.0.0.1:8080/ws”。但是您仍然需要 pip install pyo pensl service _ identity 来使用它。</p>
+
+ 
+
+</aside>
+
+</body>
+</html>

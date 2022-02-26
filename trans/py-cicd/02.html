@@ -1,0 +1,620 @@
+<html lang="en">
+<head><title>Unit Testing in Python</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">2.Python 中的单元测试</h1>
+
+ 
+<!--End Abstract--><p>许多程序员手动测试他们正在编写的代码，方法是调用他们正在开发的代码，将结果打印到控制台，并直观地扫描输出的正确性。这适用于简单的任务，但存在一些问题:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par3">当输出变大时，发现错误变得更加困难。</p></li>
+<li><p class="Para" id="Par4">当程序员疲劳时，很容易错过微妙的错误输出。</p></li>
+<li><p class="Para" id="Par5">当实现的特性变得更大时，人们往往会错过早期“测试”部分的回归。</p></li>
+<li><p class="Para" id="Par6">因为非正式的测试脚本通常只对编写它们的程序员有用，其他开发人员就看不到它们的效用了。</p></li>
+</ul>
+
+<p class="Para" id="Par7">因此，<em class="EmphasisTypeItalic ">单元测试</em>被发明出来了，在单元测试中，人们编写对代码片段的样本调用，并将返回值与期望值进行比较。</p>
+<p class="Para" id="Par8">这种比较通常在测试通过时产生很少或没有输出，否则产生非常明显的输出。一个<em class="EmphasisTypeItalic ">测试工具</em>可以用来运行来自几个测试脚本的测试，并且只报告错误和通过测试的统计概要。</p>
+<h2 class="Heading">2.1 消化:Virtualenvs</h2>
+<p class="Para" id="Par9">为了运行我们将要编写的单元测试，我们需要一些额外的工具，这些工具以 Python 包的形式提供。要安装它们，你应该使用一种叫做的工具。这是一个 Python 目录，其中包含 Python 解释器、包管理程序(如<code>pip</code>)以及到基本 Python 包的符号链接，从而为您提供了一个原始的 Python 环境，您可以在这个环境上构建一个定制的、隔离的虚拟环境，其中包含您所需要的库。virtualenv 允许你安装任何你想要的 Python 包；为应用程序安装依赖项不需要 root 权限。您可以在给定的 shell 会话中激活一个 virtualenv，当您不再需要它时，只需删除该目录。</p>
+<p>Virtualenvs 用于将独立的开发环境相互隔离，并与系统 Python 安装隔离。要创建一个，您需要<code>virtualenv</code>工具，它通常随 Python 安装一起提供，或者在 Linux 发行版上，可以通过包管理器安装。在基于 Debian 的系统上，你可以这样安装它:</p>
+<pre>$ sudo apt-get install virtualenv
+
+</pre>
+<p>要创建名为<code>venv</code>的 virtualenv，运行</p>
+<pre>$ virtualenv -p python3 venv
+
+</pre>
+<p>这将准备一个名为<code>venv</code>的目录，其中包含必要的文件。下一步应该是激活它，如下所示:</p>
+<pre>$ source venv/bin/activate
+
+</pre>
+<p>一旦您激活了它，您就可以使用<code>pip</code>将软件包安装到其中，例如:</p>
+<pre>$ pip install pytest
+
+</pre>
+<p class="Para" id="Par14">完成后，使用命令<code>deactivate</code>将其禁用。</p>
+
+<h2 class="Heading">2.2 单元测试入门</h2>
+<p class="Para" id="Par15">为了说明单元测试，让我们从单个函数以及如何测试它开始。这里我想实现的功能是一个<em class="EmphasisTypeItalic ">二分搜索法</em>。给定一个排序的数字列表(我们称之为干草堆)，在其中搜索另一个数字(针)。如果它存在，返回找到它的索引。如果没有，引发类型为<code>ValueError</code>的异常。你可以在<a href="https://github.com/python-ci-cd/binary-search"> <code>https://github.com/python-ci-cd/binary-search</code> </a>找到这个例子的代码和测试。</p>
+<p class="Para" id="Par16">我们从草堆的中间部分开始。如果恰好等于针，我们就完了。如果它比针还小，我们可以在干草堆的左半部分重复搜索。如果它比较大，我们可以在草堆的右半部分继续搜索。</p>
+<p class="Para" id="Par17">为了跟踪我们需要搜索的干草堆内部的区域，我们保留了两个索引，<code>left</code>和<code>right</code>，并且在每次迭代中，将其中一个移动到更靠近另一个，在每一步中将要搜索的空间减半。</p>
+<p>这是第一次尝试实现这个函数时的样子:</p>
+<pre>def search(needle, haystack):
+    left = 0
+    right = len(haystack) - 1
+
+    while left &lt;= right:
+        middle = left + (right - left) // 2
+        middle_element = haystack[middle]
+        if middle_element == needle:
+            return middle
+        elif middle_element &lt; needle:
+            left = middle
+        else:
+            right = middle
+    raise ValueError("Value not in haystack")
+
+</pre>
+<h3 class="Heading">第一次测试</h3>
+<p>有用吗？谁知道呢？让我们通过写一个测试来找出答案。</p>
+<pre>def test_search():
+    assert search(2, [1, 2, 3, 4]) == 1, \
+        'found needle somewhere in the haystack'
+
+</pre>
+<p>这是一个简单的函数，它使用样本输入执行<code>search</code>函数，如果没有达到预期，则使用<code>assert</code>来引发异常。我们没有直接调用这个测试函数，而是使用了<code>pytest</code>，一个由同名 Python 包提供的命令行工具。如果您的开发环境中没有它，您可以使用下面的命令安装它(记住在 virtualenv 中运行它):</p>
+<pre>pip install pytest
+
+</pre>
+<p>当<code>pytest</code>可用时，您可以在包含<code>search</code>函数和测试函数的文件上运行它，如下所示:</p>
+<pre>$ pytest binary-search.py
+==================== test session starts =====================
+platform linux -- Python 3.5.2, pytest-3.3.2, py-1.5.2
+rootdir: /home/moritz/examples, inifile:
+collected 1 item
+
+binary-search.py .                                    [100%]
+
+================== 1 passed in 0.01 seconds ==================
+
+</pre>
+<p class="Para" id="Par22">测试运行打印出各种信息:这些信息包括有关平台和所涉及软件版本的细节、工作目录，以及使用了什么<code>pytest</code>配置文件(本例中没有)。</p>
+<p class="Para" id="Par23">第<code>collected 1 item</code>行显示<code>pytest</code>找到了一个测试函数。下一行中文件名后面的点显示了进度，一个点代表一个已经执行的测试。</p>
+<p>在终端中，最后一行显示为绿色，表示测试运行通过。如果我们犯了一个错误，比如说，使用 0 而不是 1 作为预期结果，我们会得到一些诊断输出，如下所示:</p>
+<pre>========================== FAILURES ==========================
+_________________________test_search__________________________
+
+     def test_search():
+&gt;        assert search(2, [1, 2, 3, 4]) == 0, \
+             'found needle somewhere in the haystack'
+E        AssertionError: found needle somewhere in the haystack
+E        assert 1 == 0
+E         + where 1 = search(2, [1, 2, 3, 4])
+
+binary-search.py:17: AssertionError
+================== 1 failed in 0.03 seconds ==================
+
+</pre>
+<p class="Para" id="Par25">这显示了失败的测试函数，既有源代码，也有在<code>assert</code>调用中的<code>==</code>操作符两边替换的值，显示了到底哪里出错了。在支持彩色的终端中，失败的测试和底部的状态行以红色显示，以使失败的测试更加明显。</p>
+
+<h3 class="Heading">编写更多测试</h3>
+<p>代码中的许多错误在边缘情况下表现出来，以空列表或字符串作为输入，数字为零，访问列表的第一个和最后一个元素，等等。在编写测试时考虑这些情况并覆盖它们是一个好主意。让我们从搜索第一个和最后一个元素开始。</p>
+<pre>def test_search_first_element():
+    assert search(1, [1, 2, 3, 4]) == 0, \
+        'search first element'
+
+def test_search_last_element():
+    assert search(4, [1, 2, 3, 4]) == 3, \
+        'search last element'
+
+</pre>
+<p class="Para" id="Par27">查找第一个元素的测试通过了，但是最后一个元素的测试挂起了，也就是说，它无限期地运行而没有终止。您可以通过同时按下 Ctrl 和 C 键来中止 Python 进程。</p>
+<p class="Para" id="Par28">如果函数<code>search</code>能找到第一个元素却找不到最后一个元素，这里面一定有某种不对称。确实有:确定中间元素使用整数除法运算符<code>//</code>，它将正数四舍五入为零。例如，<code>1 // 2 == 0</code>。这解释了为什么循环会被卡住:当<code>right</code>等于<code>left + 1</code>时，代码将<code>middle</code>设置为<code>left</code>的值。如果执行分支<code>left = middle</code>，函数搜索的干草堆面积没有减少，循环就卡住了。</p>
+<p>有一个简单的解决方法。因为代码已经确定索引<code>middle</code>处的元素不是针，所以可以将其从搜索中排除。</p>
+<pre>def search(needle, haystack):
+    left = 0
+    right = len(haystack) - 1
+
+    while left &lt;= right:
+        middle = left + (right - left) // 2
+        middle_element = haystack[middle]
+        if middle_element == needle:
+            return middle
+        elif middle_element &lt; needle:
+            left = middle + 1
+        else:
+            right = middle - 1
+    raise ValueError("Value not in haystack")
+
+</pre>
+<p class="Para" id="Par30">有了这个修正，所有三个测试都通过了。</p>
+
+<h3 class="Heading">测试不愉快的路径</h3>
+<p class="Para" id="Par31">到目前为止，测试主要集中在“快乐路径”上，即找到一个元素并且没有遇到错误的路径。因为异常不是正常控制流中的异常(请原谅双关语),所以它们也应该被测试。</p>
+<p>有一些工具可以帮助你验证一个异常是由一段代码引起的，并且是正确的类型。</p>
+<pre>def test_exception_not_found():
+    from pytest import raises
+
+    with raises(ValueError):
+        search(-1, [1, 2, 3, 4])
+
+    with raises(ValueError):
+        search(5, [1, 2, 3, 4])
+
+    with raises(ValueError):
+        search(2, [1, 3, 4])
+
+</pre>
+<p class="Para" id="Par33">在这里，我们测试三种场景:一个值小于草堆中的第一个元素，大于最后一个元素，最后，它的大小介于第一个和最后一个元素之间，但不在草堆中。</p>
+<p class="Para" id="Par34"><code>pytest.raises</code>例程返回一个<em class="EmphasisTypeItalic ">上下文管理器</em>。上下文管理器是一种将代码(在<code>with ...</code>块中)包装到其他代码中的好方法。在这种情况下，上下文管理器从<code>with</code>块捕获异常，如果类型正确，测试通过。相反，如果没有出现异常或者出现了一个错误的类型，比如<code>KeyError</code>，测试就会失败。</p>
+<p>和前面的<code>assert</code>语句一样，您可以给测试加上标签。这对于调试测试失败和记录测试都很有用。使用<code>raises</code>函数，您可以将测试标签作为名为<code>message</code>的命名参数进行传递。</p>
+<pre>def test_exception_not_found():
+    from pytest import raises
+
+    with raises(ValueError, message="left out of bounds"):
+        search(-1, [1, 2, 3, 4])
+
+    with raises(ValueError, message="right out of bounds"):
+        search(5, [1, 2, 3, 4])
+
+    with raises(ValueError, message="not found in middle"):
+
+
+
+        search(2, [1, 3, 4])
+
+</pre>
+
+
+<h2 class="Heading">2.3 处理依赖性</h2>
+<p class="Para" id="Par36">并非所有代码都像前面章节中的<code>search</code>函数一样易于测试。一些函数调用外部库或与数据库、API 或互联网交互。</p>
+<p>在单元测试中，出于几个原因，您应该避免执行那些外部操作。</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par38">这些行为可能会产生不必要的副作用，比如向客户或同事发送电子邮件，让他们感到困惑，甚至造成伤害。</p></li>
+<li><p class="Para" id="Par39">您通常无法控制外部服务，这意味着您无法控制一致的响应，这使得编写可靠的测试更加困难。</p></li>
+<li><p class="Para" id="Par40">执行外部操作，如写入或删除文件，会使环境处于不同的状态，这可能会导致无法重现测试结果。</p></li>
+<li><p class="Para" id="Par41">性能受损，对开发反馈周期产生负面影响。</p></li>
+<li><p class="Para" id="Par42">通常，外部服务，如数据库或 API，需要凭证，这是一个管理上的麻烦，并对设置开发环境和运行测试构成了严重的障碍。</p></li>
+</ul>
+
+<p class="Para" id="Par43">那么，如何在单元测试中避免这些外部依赖呢？让我们探索一些选择。</p>
+<h3 class="Heading">将逻辑与外部依赖分离</h3>
+<p class="Para" id="Par44">许多应用程序从某个地方(通常是不同的来源)获取数据，然后对其进行一些逻辑处理，最后可能会打印出结果。</p>
+<p>让我们考虑一下计算网站中关键词的应用程序的例子。这方面的代码可能如下所示(它使用了<code>requests</code>库；可以用<code>pip install requests</code>在你的 virtualenv)里安装:</p>
+<pre>
+import requests
+
+
+def most_common_word_in_web_page(words, url):
+    """
+
+    finds the most common word from a list of words
+    in a web page, identified by its URL
+    """
+
+    response = requests.get(url)
+    text = response.text
+    word_frequency = {w: text.count(w) for w in words}
+    return sorted(words, key=word_frequency.get)[-1]
+
+if __name__ == '__main__':
+    most_common = most_common_word_in_web_page(
+        ['python', 'Python', 'programming'],
+        'https://python.org/',
+    )
+    print(most_common)
+
+</pre>
+<p class="Para" id="Par46">在撰写本文时，这段代码将<code>Python</code>打印为答案，尽管这在将来可能会改变，由 python.org 维护者决定。</p>
+<p class="Para" id="Par47">您可以在<a href="https://github.com/python-ci-cd/python-webcount"> <code>https://github.com/python-ci-cd/python-webcount</code> </a>找到示例代码和测试。</p>
+<p class="Para" id="Par48">这段代码使用<code>requests</code>库获取网页内容并访问结果文本(实际上是 HTML)。然后，该函数遍历搜索词，计算每个词在文本中出现的频率(使用<code>string.count</code>方法)，并用这些计数构建一个字典。然后，它根据单词的出现频率对单词列表进行排序，并返回最常出现的单词，这是排序列表的最后一个元素。</p>
+<p>测试<code>most_common_word_in_web_page</code>变得单调乏味，因为它使用了 HTTP 客户端<code>requests</code>。我们可以做的第一件事是将计数和排序的逻辑从获取网站的机制中分离出来。这不仅使逻辑部分更容易测试，还通过分离不真正属于一起的东西，提高了代码的质量，从而增加了内聚性。</p>
+<pre>
+import requests
+
+
+def most_common_word_in_web_page(words, url):
+    """
+
+    finds the most common word from a list of words
+    in a web page, identified by its URL
+    """
+
+    response = requests.get(url)
+    return most_common_word(words, response.text)
+
+def most_common_word(words, text):
+    """
+
+    finds the most common word from a list of words
+    in a piece of text
+    """
+
+    word_frequency = {w: text.count(w) for w in words}
+    return sorted(words, key=word_frequency.get)[-1]
+
+if __name__ == '__main__':
+    most_common = most_common_word_in_web_page(
+        ['python', 'Python', 'programming'],
+        'https://python.org/',
+    )
+    print(most_common)
+
+</pre>
+<p>做逻辑的函数<code>most_common_word</code>，现在是一个<em class="EmphasisTypeItalic ">纯</em>函数，也就是返回值只取决于传递给它的自变量，它和外界没有任何交互。这样一个纯函数很容易测试(同样，测试进入<code>test/functions.py</code>)。</p>
+<pre>def test_most_common_word():
+    assert most_common_word(['a', 'b', 'c'], 'abbbcc') \
+            == 'b', 'most_common_word with unique answer'
+
+def test_most_common_word_empty_candidate():
+    from pytest import raises
+    with raises(Exception, message="empty word raises"):
+        most_common_word([], 'abc')
+
+def test_most_common_ambiguous_result():
+    assert most_common_word(['a', 'b', 'c'], 'ab') \
+        in ('a', 'b'), "there might be a tie"
+
+</pre>
+<p>这些测试更多的是单元测试的例子，它们也提出了一些仅仅阅读函数源代码可能不明显的问题。</p><ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par52"><code>most_common_word</code>实际上并不寻找单词边界，所以它会愉快地在字符串<code>abbbcc</code>中三次计数“单词”<code>b</code>。</p></li>
+<li><p class="Para" id="Par53">当使用空的关键字列表调用该函数时，它会引发一个异常，但是我们并没有费心去指定哪种类型的错误。<sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source"> 1 </a> </sup></p></li>
+<li><p class="Para" id="Par55">我们还没有指定如果两个或更多单词有相同的出现次数，返回哪个值，因此最后一个测试使用了带有两个有效答案列表的<code>in</code>。</p></li>
+</ul>
+
+
+<p class="Para" id="Par56">根据您的情况，您可能希望将这样的测试作为已知边缘情况的文档，或者细化规范和实现。</p>
+<p class="Para" id="Par57">回到测试外部依赖函数的话题，我们已经取得了部分成功。有趣的逻辑现在是一个独立的纯函数，可以很容易地测试。最初的函数<code>most_common_word_in_web_page</code>，现在更简单了，但是仍然没有经过测试。</p>
+<p class="Para" id="Par58">我们已经隐含地建立了这样一个原则，即为了使测试更容易而修改代码是可以接受的，但这值得明确地提出来。我们将来会更多地使用它。</p>
+
+<h3 class="Heading">测试的依赖注入</h3>
+<p>如果我们多想想是什么使得函数<code>most_common_word_in_web_page</code>难以测试，我们可以得出结论，不仅仅是通过 HTTP 用户代理<code>requests</code>与外界的交互，还有全局符号<code>requests</code>的使用。如果我们可以用另一个类来代替它，那么测试就更容易了。我们可以通过对测试中的函数进行简单的修改来实现这一点。(为简洁起见，注释已从示例中删除。)</p>
+<pre>def most_common_word_in_web_page(words, url,
+        user_agent=requests):
+    response = user_agent.get(url)
+    return most_common_word(words, response.text)
+
+</pre>
+<p class="Para" id="Par60">该函数现在接受一个可选参数<code>user_agent</code>，默认为<code>requests</code>，而不是直接使用<code>requests</code>。在功能里面，单独使用的<code>requests</code>已经被<code>user_agent</code>取代。</p>
+<p>对于只用两个参数调用函数的调用者来说，什么都没有改变。但是编写测试的开发人员现在可以提供他/她自己的<em class="EmphasisTypeItalic ">测试 double </em>，一个以确定性方式运行的用户代理的替代实现。</p>
+<pre>def test_with_test_double():
+    class TestResponse():
+        text = 'aa bbb c'
+
+    class TestUserAgent():
+        def get(self, url):
+            return TestResponse()
+
+    result = most_common_word_in_web_page(
+        ['a', 'b', 'c'],
+        'https://python.org/',
+        user_agent=TestUserAgent()
+    )
+    assert result == 'b', \
+        'most_common_word_in_web_page tested with test double'
+
+</pre>
+<p>这个测试仅仅模拟了被测试函数使用的部分<code>requests</code> API。它忽略了<code>get</code>方法的<code>url</code>参数，所以纯粹从这个测试中，我们不能确定被测试的函数正确地使用了用户代理类。我们可以扩展 test double 来记录传入的参数值，并在以后检查它。</p>
+<pre>def test_with_test_double():
+    class TestResponse():
+        text = 'aa bbb c'
+
+    class TestUserAgent():
+        def get(self, url):
+            self.url = url
+            return TestResponse()
+
+    test_ua = TestUserAgent()
+    result = most_common_word_in_web_page(
+        ['a', 'b', 'c'],
+        'https://python.org/',
+        user_agent=test_ua
+    )
+    assert result == 'b', \
+        'most_common_word_in_web_page tested with test double'
+    assert test_ua.url == 'https://python.org/'
+
+</pre>
+<p class="Para" id="Par63">本节演示的技术是<a href="https://en.wikipedia.org/wiki/Dependency_injection"> <em class="EmphasisTypeItalic ">依赖注入</em> </a> <em class="EmphasisTypeItalic ">的简单形式。</em> <sup> <a epub:type="noteref" href="#Fn2" id="Fn2_source"> 2 </a> </sup>调用者可以选择注入一个函数所依赖的对象或类。</p>
+<p class="Para" id="Par65">依赖注入不仅对测试有用，而且使软件更具可插拔性。例如，您可能希望您的软件能够在不同的上下文中使用不同的存储引擎，或者不同的 XML 解析器，或者存在多种实现的任何数量的其他软件基础结构。</p>
+
+<h3 class="Heading">模拟对象</h3>
+<p class="Para" id="Par66">编写 test double 类很快就会变得单调乏味，因为您通常需要为测试中调用的每个方法编写一个类，并且所有这些类都必须设置为正确地链接它们的响应。如果您编写多个测试场景，您要么必须使测试加倍足够通用以覆盖多个场景，要么再次重复几乎相同的代码。</p>
+<p>模拟对象提供了一个更方便的解决方案。您可以轻松地将这些对象配置为以预定义的方式做出响应。</p>
+<pre>def test_with_test_mock():
+    from unittest.mock import Mock
+    mock_requests = Mock()
+    mock_requests.get.return_value.text = 'aa bbb c'
+    result = most_common_word_in_web_page(
+        ['a', 'b', 'c'],
+        'https://python.org/',
+        user_agent=mock_requests
+    )
+    assert result == 'b', \
+        'most_common_word_in_web_page tested with test double'
+    assert mock_requests.get.call_count == 1
+    assert mock_requests.get.call_args[0][0] \
+            == 'https://python.org/', 'called with right URL'
+
+</pre>
+<p>这个测试函数的前两行导入了类<code>Mock</code>并从中创建了一个实例。然后真正的奇迹发生了。</p>
+<pre>mock_requests.get.return_value.text = 'aa bbb c'
+
+</pre>
+<p class="Para" id="Par69">这将在对象<code>mock_requests</code>中安装一个属性<code>get</code>，当它被调用时，将返回另一个模拟对象。第二个模拟对象上的属性<code>text</code>有一个属性<code>text</code>，它保存了字符串<code>'aa bb c'</code>。</p>
+<p class="Para" id="Par70">让我们从一些简单的例子开始。如果你有一个<code>Mock</code>对象<code>m</code>，那么<code>m.a = 1</code>安装一个值为<code>1</code>的属性<code>a</code>。另一方面，<code>m.b.return_value = 2</code>配置<code>m</code>，使得<code>m.b()</code>返回<code>2</code>。</p>
+<p class="Para" id="Par71">可以继续链式，所以<code>m.c.return_value.d.e.return_value = 3</code>使<code>m.c().d.e()</code>返回 3。本质上，赋值中的每个<code>return_value</code>对应于调用链中的一对括号。</p>
+<p class="Para" id="Par72">除了设置这些准备好的返回值，模拟对象还记录调用。前面的例子检查了一个模拟对象的<code>call_count</code>，它只是记录了这个模拟作为一个函数被调用的频率。</p>
+<p class="Para" id="Par73">属性包含一组传递给它的最后一次调用的参数。这个元组的第一个元素是位置参数的列表，第二个元素是命名参数的字典。</p>
+<p class="Para" id="Par74">如果您想检查一个模拟对象的多次调用，<code>call_args_list</code>包含一个这样的元组列表。</p>
+<p class="Para" id="Par75"><code>Mock</code>类有更多有用的方法。完整列表请参考<a href="https://docs.python.org/3/library/unittest.mock.html">官方文档</a> <sup> <a epub:type="noteref" href="#Fn3" id="Fn3_source"> 3 </a> </sup>。</p>
+
+<h3 class="Heading">修补</h3>
+<p>有时候，依赖注入是不实际的，或者你不想冒险改变现有的代码来测试它。然后，您可以利用 Python 的动态特性来临时覆盖测试代码中的符号，并用测试 doubles 替换它们——通常是模拟对象。</p>
+<pre>from unittest.mock import Mock, patch
+
+def test_with_patch():
+    mock_requests = Mock()
+    mock_requests.get.return_value.text = 'aa bbb c'
+    with patch('webcount.functions.requests', mock_requests):
+        result = most_common_word_in_web_page(
+            ['a', 'b', 'c'],
+            'https://python.org/',
+        )
+    assert result == 'b', \
+        'most_common_word_in_web_page tested with test double'
+    assert mock_requests.get.call_count == 1
+    assert mock_requests.get.call_args[0][0] \
+            == 'https://python.org/', 'called with right URL'
+
+</pre>
+<p class="Para" id="Par78">对<code>patch</code>函数的调用(从<code>unittest.mock</code>导入，这是 Python 附带的一个标准库)指定了要修补(临时替换)的符号和替换它的测试 double。<code>patch</code>函数返回一个上下文管理器。因此，在执行离开发生调用的<code>with</code>块后，临时替换会自动撤销。</p>
+<p class="Para" id="Par79">修补导入的符号时，重要的是在导入该符号的命名空间中修补该符号，而不是在源库中修补该符号。在我们的例子中，我们修补了<code>webcount.functions.requests</code>，而不是<code>requests.get</code>。</p>
+<p class="Para" id="Par80">打补丁消除了与其他代码(通常是库)的交互。这有利于单独测试代码，但也意味着打了补丁的测试无法检测对已打补丁的库的误用。因此，编写更大范围的测试，如集成测试或验收测试，以涵盖这些库的正确使用是很重要的。</p>
+
+
+<h2 class="Heading">2.4 分离代码和测试</h2>
+<p class="Para" id="Par81">到目前为止，为了方便起见，我们已经将代码和测试放在同一个文件中。然而，代码和测试服务于不同的目的，所以当它们变大时，通常将它们分成不同的文件，通常甚至是不同的目录。我们的测试代码现在也可以自己加载一个模块(<code>pytest</code>)，这是一个你不想加在产品代码上的负担。最后，一些测试工具为测试和代码假设了不同的文件，所以我们将遵循这个惯例。</p>
+<p class="Para" id="Par82">在开发 Python 应用程序时，通常有一个项目包名和一个同名的顶级目录。测试进入名为<code>tests</code>的第二个顶级目录。例如，Django web 框架有目录<code>django</code>和<code>test</code>，还有一个<code>README.rst</code>作为初学者的入口点，还有一个<code>setup.py</code>用于安装项目。</p>
+<p class="Para" id="Par83">每个作为 Python 模块的目录必须包含一个名为<code>__init__.py</code>的文件，这个文件可以是空的，也可以包含一些代码。通常，这段代码只导入其他符号，这样模块的用户就可以从顶级模块名导入它们。</p>
+<p>让我们考虑一个小应用程序，给定一个 URL 和一列关键字，打印出 URL 指向的网页上最常出现的关键字。我们可以称之为<code>webcount</code>，并将逻辑放入文件<code>webcount/functions.py</code>。然后，文件<code>webcount/ __init__ .py</code>会是这样的:</p>
+<pre>from .functions import most_common_word_in_web_page
+
+</pre>
+<p>在每个测试文件中，我们明确地导入我们测试的函数，例如:</p>
+<pre>from webcount import most_common_word_in_web_page
+
+</pre>
+<p class="Para" id="Par86">我们可以将测试函数放入<code>test/</code>目录下的任何文件中。在本例中，我们将它们放入文件<code>test/test_functions.py</code>，以镜像实现的位置。<code>test_ prefix</code>告诉 pytest 这是一个包含测试的文件。</p>
+<h3 class="Heading">调整 Python 路径</h3>
+<p>当您用<code>pytest test/test_functions.py</code>运行这个测试时，您可能会得到这样一个错误:</p>
+<pre>test/functions.py:3: in &lt;module&gt;
+    from webcount import most_common_word_in_web_page
+E   ImportError: No module named 'webcount'
+
+</pre>
+<p class="Para" id="Par88">Python 找不到测试中的模块<code>webcount</code>，因为它不在 Python 的默认模块加载路径中。</p>
+<p class="Para" id="Par89">您可以通过在 virtualenv 的<code>site-packages</code>目录中添加项目根目录的绝对路径到一个扩展名为<code>.pth</code>的文件来解决这个问题。例如，如果您使用 Python 3.5，并且您的 virtualenv 位于目录<code>venv/</code>中，您可以将绝对路径放入文件<code>venv/lib/python3.5/site-packages/webcount.pth</code>。在官方 Python 文档中讨论了操纵“Python 路径”的其他方法。<sup> <a epub:type="noteref" href="#Fn4" id="Fn4_source"> 4 </a> </sup></p>
+<p class="Para" id="Par91">一种特定于 pytest 的方法是向项目的根目录添加一个空文件<code>conftest.py</code>。Pytest 查找该名称的文件，并在检测到它们存在时，将包含它们的目录标记为要测试的项目，并在测试运行期间将该目录添加到 Python 路径中。</p>
+<p class="Para" id="Par92">在调用 pytest 时，您不必指定测试文件。如果您忽略它，pytest 会搜索所有测试文件并运行它们。关于集成 <a href="https://docs.pytest.org/en/latest/goodpractices.html">实践</a> <sup> <a epub:type="noteref" href="#Fn5" id="Fn5_source"> 5 </a> </sup>的<a href="https://docs.pytest.org/en/latest/goodpractices.html"> pytest 文档中有关于这个搜索如何工作的更多信息。</a></p>
+
+
+<h2 class="Heading">2.5 关于单元测试和 Pytest 的更多内容</h2>
+<p class="Para" id="Par94">在尝试为代码编写测试时，您可能会遇到更多的主题。例如，您可能必须管理<em class="EmphasisTypeItalic ">fixture</em>，作为您的测试基线的数据片段。或者，您可能需要从运行时加载的代码中修补函数，或者做一些其他没有人让您做好准备的事情。</p>
+<p class="Para" id="Par95">对于这种情况，<a href="https://docs.pytest.org/en/latest/"> pytest 文档</a> <sup> <a epub:type="noteref" href="#Fn6" id="Fn6_source"> 6 </a> </sup>是一个很好的起点。如果你想要更全面的介绍，Brian Okken 的书<em class="EmphasisTypeItalic "> Python Testing with pytest </em>(务实书架，2017)值得一读。</p>
+
+<h2 class="Heading">2.6 在新环境中运行单元测试</h2>
+<p class="Para" id="Par97">开发人员通常有一个开发环境，在这个环境中，他们实现他们的变更，运行自动的，有时是手动的测试，提交他们的变更，并将它们推送到一个中央存储库。这样的开发环境倾向于积累 Python 包，这些包并不明确依赖于正在开发的软件，而且它们倾向于只使用一个 Python 版本。这两个因素也倾向于使测试套件不太具有可重复性，这会导致“在我的机器上工作”的心态。</p>
+<p class="Para" id="Par98">为了避免这种情况，您需要一种机制来以可重复的方式在几个 Python 版本上轻松执行测试套件。tox 自动化项目 <sup> <a epub:type="noteref" href="#Fn7" id="Fn7_source"> 7 </a> </sup>提供了一个解决方案:您向它提供一个简短的配置文件<code>tox.ini</code>，它列出了 Python 版本和一个用于安装模块的标准<code>setup.py</code>文件。然后，你可以运行<code>tox</code>命令。</p>
+<p><code>tox</code>命令为每个 Python 版本创建一个新的 virtualenv，在每个环境中运行测试，并报告测试状态。首先，我们需要一个文件<code>setup.py</code>。</p>
+<pre>
+# file setup.py
+
+from setuptools import setup
+
+setup(
+    name = "webcount",
+    version = "0.1",
+    license = "BSD",
+    packages=['webcount', 'test'],
+    install_requires=['requests'],
+)
+
+</pre>
+<p class="Para" id="Par101">这使用 Python 的库<code>setuptools</code>使开发中的代码可安装。通常，您会包括更多的元数据，如作者、电子邮件地址、更详细的描述等。</p>
+<p>然后，文件<code>tox.ini</code>告诉 tox 如何运行测试，以及在什么环境中运行。</p>
+<pre>
+[tox]
+
+envlist = py35
+
+
+[testenv]
+
+deps = pytest
+       requests
+commands = pytest
+
+</pre>
+<p class="Para" id="Par103">本例中的<code>envlist</code>只包含 Python 3.5 的<code>py35</code>。如果你也想在 Python 3.6 上运行测试，你可以写<code>envlist = py35,py36</code>。关键字<code>pypy35</code>指的是 3.5 版本中 Python 的替代<em class="EmphasisTypeItalic "> pypy </em>实现。</p>
+<p>现在，调用<code>tox</code>在所有环境中运行测试(这里只有一个)，最后报告状态。</p>
+<pre>py35 runtests: PYTHONHASHSEED="3580365323"
+py35 runtests: commands[0] | pytest
+================== test session starts ==================
+platform linux -- Python 3.5.2, pytest-3.6.3, py-1.5.4,
+    pluggy-0.6.0
+rootdir: /home/[...]/02-webcount-patched, inifile:
+collected 1 item
+
+test/test_functions.py .                         [100%]
+
+=============== 1 passed in 0.08 seconds ================
+_________________________summary_________________________
+
+
+
+
+py35: commands succeeded
+congratulations :)
+
+</pre>
+
+<h2 class="Heading">2.7 另一个示例项目:matheval</h2>
+<p class="Para" id="Par105">如今，许多项目都是作为 web 服务实现的，因此可以通过 HTTP 使用它们——或者作为 API，或者通过实际的网站。让我们考虑一个很小的 web 服务，它评估被编码为 JSON 数据结构中的树的数学表达式。(你可以在<a href="https://github.com/python-ci-cd/python-matheval/"> <code>https://github.com/python-ci-cd/python-matheval/</code> </a>找到这个项目的完整源代码。)作为一个例子，表达式 5 * (4 - 2)将被编码为 JSON 树<code>["*", 5, ["+", 4, 2]]</code>并计算为 10。</p>
+<h3 class="Heading">应用逻辑</h3>
+<p>实际的评估逻辑相当紧凑(参见清单<a href="#PC29"> 2-1 </a>)。</p>
+<pre>from functools import reduce
+
+import operator
+
+
+ops = {
+    '+': operator.add,
+    '-': operator.add,
+    '*': operator.mul,
+    '/': operator.truediv,
+}
+
+def math_eval(tree):
+    if not isinstance(tree, list):
+        return tree
+    op = ops[tree.pop(0)]
+    return reduce(op, map(math_eval, tree))
+
+Listing 2-1File matheval/evaluator.py: Evaluation Logic
+
+
+</pre>
+<p>使用 Flask 框架，将它公开到 Web 上也不需要太多努力(参见清单<a href="#PC30"> 2-2 </a>)。</p>
+<pre>
+#!/usr/bin/python3
+
+
+from flask import Flask, request
+
+from matheval.evaluator import math_eval
+
+app = Flask(__name__)
+
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    tree = request.get_json(force=True)
+    result = math_eval(tree);
+    return str(result) + "\n"
+
+if __name__ == '__main__':
+    app.run(debug=True)
+
+Listing 2-2File matheval/frontend.py: Web Service Binding
+
+
+</pre>
+<p>一旦您将项目的根目录添加到当前 virtualenv 的一个<code>.pth</code>文件中，并安装了<code>flask</code>先决条件，您就可以启动一个开发服务器，如下所示:</p>
+<pre>$ python matheval/frontend.py
+ * Serving Flask app "frontend" (lazy loading)
+ * Environment: production
+   WARNING: Do not use the development server in a production environment.
+   Use a production WSGI server instead.
+* Debug mode: on
+* Running on http://127.0.0.1:5000/ (Press CTRL+C to quit)
+
+</pre>
+<p>对于生产应用，最好安装<code>gunicorn</code>,然后启动应用程序</p>
+<pre>$ gunicorn matheval.frontend:app
+
+</pre>
+<p>对应用程序逻辑进行单元测试非常简单，因为它是一个纯函数(参见清单<a href="#PC33"> 2-3 </a>)。</p>
+<pre>from matheval.evaluator import math_eval
+
+def test_identity():
+    assert math_eval(5) == 5, 'identity'
+
+def test_single_element():
+    assert math_eval(['+', 5]) == 5, 'single element'
+
+def test_addition():
+    assert math_eval(['+', 5, 7]) == 12, 'adding two numbers'
+
+def test_nested():
+    assert math_eval(['*', ['+', 5, 4], 2]) == 18
+
+Listing 2-3File test/test_evaluator.py: Unit Tests for Evaluating Expression Trees
+
+
+</pre>
+<p class="Para" id="Par111"><code>index</code>路线并不复杂，不足以保证单独的单元测试，但是在后面的章节中，我们将编写一个冒烟测试，在应用程序安装后对其进行测试。</p>
+<p>我们需要一个小的<code>setup.py</code>文件来通过<code>pytest</code>运行测试(参见清单<a href="#PC34"> 2-4 </a>)。</p>
+<pre>
+#!/usr/bin/env python
+
+
+from setuptools import setup
+
+setup(name='matheval',
+      version='0.1',
+      description='Evaluation of expression trees',
+      author='Moritz Lenz',
+      author_email='moritz.lenz@gmail.com',
+      url='https://deploybook.com/',
+      requires=['flask', 'pytest', 'gunicorn'],
+      setup_requires=['pytest-runner'],
+      packages=['matheval']
+     )
+
+Listing 2-4File setup.py for matheval
+
+
+</pre>
+<p>最后，我们再次需要一个空文件<code>conftest.py</code>，现在可以运行测试了。</p>
+<pre>$ pytest
+==================== test session starts =====================
+platform linux -- Python 3.6.5, pytest-3.8.0, py-1.6.0
+rootdir: /home/moritz/src/matheval, inifile:
+collected 4 items
+
+test/test_evaluator.py ....                            [100%]
+
+================== 4 passed in 0.02 seconds ==================
+
+</pre>
+
+
+<h2 class="Heading">2.8 摘要</h2>
+<p class="Para" id="Par114">单元测试通过用样本输入调用一段代码，并验证它返回预期的结果还是抛出预期的异常，来孤立地测试这段代码。使用 pytest，测试是一个函数，其名称以<code>test_</code>开头，包含验证返回值的<code>assert</code>语句。您用<code>pytest path/to/file.py</code>运行这些测试文件，它会为您找到并运行测试。它使测试失败变得非常明显，并试图提供尽可能多的上下文来调试它们。</p>
+<p class="Para" id="Par115">模拟对象提供了一种快速创建测试副本的方法，修补机制提供了一种将它们注入测试代码的便捷方法。</p>
+<p class="Para" id="Par116"><code>tox</code>命令和项目创建了隔离的测试环境，使得测试套件可重复，并且更方便在多个 Python 版本和实现上进行测试。</p>
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par54">它实际上引发了一个<code>IndexError</code>，试图访问排序列表的最后一个元素，这个元素是空的。</p>
+
+ 
+
+<a href="#Fn2_source">2</a><p class="Para" id="Par64">维基百科，《依赖注入》，<a href="https://en.wikipedia.org/wiki/Dependency_injection"> <code>https://en.wikipedia.org/wiki/Dependency_injection</code> </a>，2018 年。</p>
+
+ 
+
+<a href="#Fn3_source">3</a><p class="Para" id="Par76">Python 软件基础，“<code>unittest.mock</code>—模拟对象库”，<a href="https://docs.python.org/3/library/unittest.mock.html"> <code>https://docs.python.org/3/library/unittest.mock.html</code> </a>，2018。</p>
+
+ 
+
+<a href="#Fn4_source">4</a><p class="Para" id="Par90"><a href="https://docs.python.org/3/install/index.html#inst-search-path"> <code>https://docs.python.org/3/install/index.html#inst-search-path</code> </a>。</p>
+
+ 
+
+<a href="#Fn5_source">5</a><p class="Para" id="Par93"><a href="https://docs.pytest.org/en/latest/goodpractices.html"> <code>https://docs.pytest.org/en/latest/goodpractices.html</code> </a>。</p>
+
+ 
+
+<a href="#Fn6_source">6</a><p class="Para" id="Par96">Pytest，《pytest:帮助你写出更好的程序》，<a href="https://docs.pytest.org/en/latest/"> <code>https://docs.pytest.org/en/latest/</code> </a>，2018。</p>
+
+ 
+
+<a href="#Fn7_source">7</a><p class="Para" id="Par99">tox，“欢迎来到 tox 自动化项目”，<a href="https://tox.readthedocs.io/en/latest/"> <code>https://tox.readthedocs.io/en/latest/</code> </a>，2018。</p>
+
+ 
+
+</aside>
+
+</body>
+</html>

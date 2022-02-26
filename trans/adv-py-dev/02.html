@@ -1,0 +1,1113 @@
+<html lang="en">
+<head><title>Testing, checking, linting</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body>
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">2.测试、检查、林挺</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">Python 以“鸭子”类型而闻名，<sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source" role="doc-noteref"> 1 </a> </sup>也就是说，你应该在没有显式类型检查的情况下编写代码。如果你写了一个在数字类型上实现某种算法的函数，那么当使用<code>int</code>、<code>float</code>、<code>decimal.Decimal</code>、<code>fractions.Fraction</code>或<code>numpy.uint64</code>时，它应该同样工作良好。只要对象提供了正确的功能，并且这些功能具有正确的含义，它们就能正常工作。</p>
+<p>Python 通过<em class="EmphasisTypeItalic ">后期绑定</em>和<em class="EmphasisTypeItalic ">动态分派</em>的相关特性来实现这一点。我们稍后将更深入地回到这个主题，但是可以说动态调度是能够运行</p>
+<pre>some_int + other_int
+some_float + other_float
+
+</pre>
+<p>而不得不用<sup> <a epub:type="noteref" href="#Fn2" id="Fn2_source" role="doc-noteref"> 2 </a> </sup></p><pre>int.__add__(some_int, other_int)
+float.__add__(some_float, other_float)
+
+</pre>
+
+<p class="Para" id="Par7">也就是说，通过对象来解析函数，以找到该类型的正确实现。后期绑定意味着这种查找发生在调用函数的时候，而不是在编写程序的时候。这两者的结合形成了我们所说的鸭子类型，并允许编写信任底层对象实现的函数，而无需事先知道它们是什么。然而，这也意味着 Python 程序无法从使用<em class="EmphasisTypeItalic ">早期绑定</em> <sup> <a epub:type="noteref" href="#Fn3" id="Fn3_source" role="doc-noteref"> 3 </a> </sup>的语言提供的相同级别的自动检查中获益。</p>
+<p class="Para" id="Par9">到目前为止，我们一直在编写操作 Python 内置数据类型的简单函数，比如 float。这对于琐碎的函数很有效，但是随着程序变得越来越复杂，编写与代码的其他部分没有正式关系的代码变得越来越困难。</p>
+<p>在前一章中，我们向数据收集中添加了一个湿度值，但它来自一个也收集环境温度的传感器。传感器以摄氏度为单位返回这一信息。我们可以添加一个匹配的温度传感器，如清单<a href="#PC3"> 2-1 </a>所示。</p>
+<pre>def get_temperature():
+    # Connect to a DHT22 sensor on GPIO pin 4
+    try:
+        from adafruit_dht import DHT22
+        from board import D4
+    except (ImportError, NotImplementedError):
+        # No DHT library results in an ImportError.
+        # Running on an unknown platform results in a NotImplementedError
+        # when getting the pin
+        return None
+    return DHT22(D4).temperature
+
+Listing 2-1A simple temperature sensor function
+
+
+</pre>
+<p>然而，我们可能想让用户以不同的格式看到它。当我们编写一个转换函数时，从我们对程序功能的理解和我们给函数起的名字中我们知道，它对数字进行运算，从一个温度系统转换到另一个温度系统，但这种关系纯粹是开发人员的理解，并没有隐含在任何代码中。我们为此编写的代码如清单<a href="#PC4"> 2-2 </a>所示。</p>
+<pre>to Kelvin
+
+Listing 2-2Conversion functions for Celsius to Fahrenheit and Celsius
+
+
+</pre>
+<p><img alt="../images/481001_1_En_2_Chapter/481001_1_En_2_Figa_HTML.jpg" src="../images/481001_1_En_2_Chapter/481001_1_En_2_Figa_HTML.jpg" style="width:37.48em"/></p>
+
+<p>正如你从截图中看到的，这些对于整数参数是正确的。如果为它们提供了<code>Fraction</code>、<sup>、<a epub:type="noteref" href="#Fn4" id="Fn4_source" role="doc-noteref"> 4 </a>、</sup>、<code>Decimal</code>或<code>float</code>参数，它们也会返回正确的值。我们的函数实际上会返回任何数值类型的值。如果我们调用<code>celsius_to_fahrenheit("21")</code>，Python 的类型系统会抛出<code>TypeError</code>，因为除法运算不是在字符串上指定的，但是我们的函数只对实数有意义，而不仅仅是实现除法方法的对象。我们在任何地方都没有捕捉到这个需求，所以如果有人传递一些我们不期望的数值，这些函数仍然会产生一个输出(清单<a href="#PC6"> 2-3 </a>)。</p><pre>to Fahrenheit
+
+Listing 2-3The result of converting a complex number or a matrix from Celsius
+
+
+</pre>
+
+<p><img alt="../images/481001_1_En_2_Chapter/481001_1_En_2_Figb_HTML.jpg" src="../images/481001_1_En_2_Chapter/481001_1_En_2_Figb_HTML.jpg" style="width:37.52em"/></p>
+
+<p class="Para" id="Par14">本章介绍的前两个概念在这些示例中有所体现。测试是确定功能是否正常工作的过程。检查，或者更确切地说是静态类型检查，是在编写函数时而不是运行时识别函数所操作的类型的过程。当编写库时，为代码编写测试是正常的。你可能是唯一运行这些测试的人；它们可以增强你对准则的信心，并有助于你做出贡献。</p>
+<p class="Para" id="Par15">另一方面，您添加的任何类型检查对任何使用您的代码作为库函数来源的人都有直接的好处。您可能会从这些检查中对自己的代码缺乏信心(尽管它们确实有助于您发现错误)，但是它们真正的作用是使您的代码更容易被那些不像作者那样熟悉它的人使用。这并不是说类型检查对你没有什么好处；他们提供的暗示对于澄清微妙的误解是非常宝贵的。许多 ide 甚至使用它们提供的额外信息来提供更加用户友好的编程体验。</p>
+<h2 class="Heading">测试</h2>
+<p>
+</p><blockquote class="BlockQuote"><p class="Para ParaOneEmphasisChild" id="Par17"><em class="EmphasisTypeItalic ">未经测试的代码就是断码。</em></p>
+</blockquote>
+
+<p class="Para" id="Par18">Python 内置了对测试的支持，其形式是标准库中的 unittest 模块。这提供了一个<code>TestCase</code>类，它用安装和拆卸代码包装了单独的测试，并提供了用于断言值之间关系的帮助函数。虽然可以单独使用这个模块编写测试，但是我强烈建议使用附加模块 pytest。</p>
+<p>Pytest 消除了在建立测试系统时对样板文件的需求。比较以下用 unittest 风格(清单<a href="#PC8"> 2-5 </a>)和 pytest 风格(清单<a href="#PC9"> 2-6 </a>)编写的测试。这些是测试我们之前原型化的温度转换函数，如清单<a href="#PC7"> 2-4 </a>所示。</p>
+<pre>import pytest
+from temperature import celsius_to_fahrenheit
+
+def test_celsius_to_fahrenheit():
+    assert celsius_to_fahrenheit(21) == 69.8
+
+def test_celsius_to_fahrenheit_equivlance_point():
+    assert celsius_to_fahrenheit(-40) == -40
+
+def test_celsius_to_fahrenheit_float():
+    assert celsius_to_fahrenheit(21.2) == 70.16
+
+def test_celsius_to_fahrenheit_string():
+    with pytest.raises(TypeError):
+        f = celsius_to_fahrenheit("21")
+
+Listing 2-6Pytest style of testing the conversion function
+
+
+</pre>
+<pre>import unittest
+from temperature import celsius_to_fahrenheit
+
+class TestTemperatureConversion(unittest.TestCase):
+
+    def test_celsius_to_fahrenheit(self):
+        self.assertEqual(celsius_to_fahrenheit(21), 69.8)
+
+    def test_celsius_to_fahrenheit_equivlance_point(self):
+        self.assertEqual(celsius_to_fahrenheit(-40), -40)
+
+    def test_celsius_to_fahrenheit_float(self):
+        self.assertEqual(celsius_to_fahrenheit(21.2), 70.16)
+
+    def test_celsius_to_fahrenheit_string(self):
+        with self.assertRaises(TypeError):
+            f = celsius_to_fahrenheit("21")
+
+if __name__ == '__main__':
+    unittest.main()
+
+Listing 2-5Unittest style of testing the conversion function
+
+
+</pre>
+<pre>def celsius_to_fahrenheit(celsius):
+    return celsius * 9 / 5 + 32
+
+def celsius_to_kelvin(celsius):
+    return 273.15 + celsius
+
+Listing 2-4temperature.py being tested
+
+
+</pre>
+<p>最明显的区别就是<code>self.assertEqual(x, y)</code>和<code>assert x == y</code>之间的区别。这两者做同样的事情，但是 pytest 风格允许更自然的代码。unittest 风格将大多数操作包装在助手函数中，助手函数既执行比较，又在断言失败时生成适当的错误消息。例如，如果 x 和 y 是不同的列表，<code>assertEqual</code>调用<code>assertListEqual</code>来比较列表并生成缺失和附加元素的 diff，并将当前测试标记为失败。表<a href="#Tab1"> 2-1 </a>展示了 pytest 断言风格比 unittest 断言风格更清晰的方式。</p>
+<p>表 2-1</p><p class="SimplePara">unittest 和 pytest 风格中的一些常见断言格式</p>
+
+
+<table style="border-collapse: collapse;border-top: 0.5pt solid ; border-bottom: 0.5pt solid ; border-left: 0.5pt solid ; border-right: 0.5pt solid ; "><colgroup><col class="tcol1 align-left"/>
+<col class="tcol2 align-left"/>
+<col class="tcol3 align-left"/>
+</colgroup>
+<thead><tr><th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">比较</p>
+</th>
+<th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">单元测试</p>
+</th>
+<th style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">Pytest(测试)</p>
+</th>
+</tr>
+</thead>
+<tbody><tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">价值观是平等的</p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>self.assertEqual(x, y)</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>assert x == y</code></p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">价值观是不平等的</p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>self.assertNotEqual(x, y)</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>assert x != y</code></p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">值为无</p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>self.assertIsNone(x)</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>assert x is None</code></p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">列表包含</p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>self.assertIn(x, y)</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>assert x in y</code></p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">浮点数相差不到 0.000001</p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>self.assertAlmostEqual(x, y)</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>assert x == pytest.approx(y)</code></p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara">引发了异常</p>
+</td>
+<td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>with self.assertRaises(TypeError):</code></p>
+<p class="SimplePara"><code>doSomething()</code></p>
+</td>
+<td style="text-align: left;"><p class="SimplePara"><code>with pytest.raises(TypeError):</code></p>
+<p class="SimplePara"><code>doSomething()</code></p>
+</td>
+</tr>
+</tbody>
+</table>
+
+<p class="Para" id="Par21">此外，unittest 有一个<code>TestCase</code>类，它被用作所有测试组的基类。这些测试用例可以具有通用的设置和拆卸功能，以确保通用的变量和数据就位。ifmain 块中调用的<code>unittest.main()</code>函数是测试系统的入口点。那个函数<em class="EmphasisTypeItalic ">收集</em>当前模块中的所有测试类并执行它们。对于较大的项目，通常会有多个包含测试的文件，这些文件由测试加载器<em class="EmphasisTypeItalic ">发现</em>，并且它们的内容被收集和运行。</p>
+<p class="Para" id="Par22">Pytest 的行为有些不同；运行可执行文件开始测试发现，而不是依赖 Python 源文件来整理测试。一旦发现了测试，就应用作为命令行参数传递的任何过滤器，并运行剩余的测试。</p>
+<p class="Para" id="Par23">定义测试的代码与执行设置和发现的独立可执行文件之间的分离允许对执行测试的 Python 环境进行更多的控制，例如，允许使用裸<code>assert</code>语句，而不需要断言的包装函数。</p>
+<h3 class="Heading">何时编写测试</h3>
+<p class="Para" id="Par24">在软件工程中有很多关于什么时候是写测试的合适时间，应该在代码写之前还是之后写的强烈意见。首先编写测试通常被称为测试驱动开发(TDD ),它有很多支持者。这是有原因的。在测试驱动的环境中工作是非常令人满意的，因为在开发一个特性的最后阶段，它会让你有一种胜利的感觉。如果您计划以后编写测试，它们可能会让人觉得是不必要的杂务。</p>
+<p class="Para" id="Par25">在软件工程的许多情况下，对于任何给定的问题都有一个最佳选择，但是我相信 TDD 与稍后编写测试是一个更个人化的选择。我坚信无论哪种方式，开发人员都可以是高效的，但是有些人自然会被首先编写测试所吸引，而另一些人则觉得这会导致缓慢的开始，这是他们想要避免的。也很有可能你更喜欢哪一个取决于你的心情或者你对你正在工作的代码库的熟悉程度。</p>
+<p class="Para" id="Par26">我通常更喜欢首先编写测试，因为我发现它有助于我在深入实现细节之前思考代码的含义，但我经常发现自己希望快速完成一些工作，然后再完善它。这两种方法都完全有效；在编写代码之前编写测试并不比之后编写更正确或合适。两种都试试，看看哪一种对你来说更自然。</p>
+<p class="Para" id="Par27">在某些情况下，您甚至可能决定测试不值得编写，或者您可能有一个客户或经理为了节省时间而强迫您不要编写测试。我不会告诉你这是一个好主意，但同样，有时这也是一种有效的方法。如果您正在编写一个只运行一次的程序，或者正在使用一个未经测试的复杂的现有代码库，那么编写测试的成本/收益比就会偏离它通常所在的位置。在这些情况下，决定测试不是时间投资的优先事项是完全可以接受的。但是，如果发生这种情况，你要记住，决定不是不可逆的。如果你发现自己反复手动测试同样的东西并感到沮丧，这通常是你应该编写测试的信号。如果你认为增加测试可以节省时间，不要让你花费在手工测试上的时间的沉没成本阻止你花时间增加测试。</p>
+Exercise 2-1: Try Test-Driven Development
+<p class="Para FirstParaInFormalPara" id="Par28">在这一章中，我们在编写完代码后，正在编写测试。这没有什么特别的原因。这一选择是为了使这一章的内容更加自然。如果您想先尝试编写测试，这是一个很好的机会。如果你更喜欢在这之后写测试，按照这一章的流程，那么可以跳过这个练习。</p>
+<p class="Para" id="Par29">选择一个我们在前一章看到的传感器，并为其编写一些测试。在本章的支持代码中，您会发现一个使用上一章中的代码设置的环境。它还包含如何运行测试的文档。</p>
+<p class="Para" id="Par30">如果你真的完成了这个练习，请注意你最终得到的代码结构可能与本章所建议的有很大的不同。请记住，未来的章节将建立在这一点上，你还不知道所有的要求。有许多方法可以解决这个问题；这个练习的目的是帮助你了解在 TDD 过程中，作为测试写作的一部分，你需要做什么样的决策；这里没有正确的答案。</p>
+
+
+<h3 class="Heading">创建格式化函数以提高可测试性</h3>
+<p class="Para" id="Par31">在前一章中，我们创建了一个简单的脚本，以简单的命令行脚本的形式打印各个传感器的值。这包括从预先编写的<code>main()</code>函数中手动调用多个函数，并独立处理它们的格式。尽管这是一个概念验证，但这不是构建大型系统的可持续方式。对于每个传感器值，我们需要一种方法来提取用于定量分析的原始值以及用于向最终用户显示的格式化值。</p>
+<p class="Para" id="Par32">进行这种分离的另一个重要原因是确保功能有严格的关注点分离。我们希望能够测试是否提取了正确的值，以及值的格式是否正确，而不必同时进行这两项工作。如果我们有一个紧密耦合的数据提取和格式化函数，我们将无法检查一系列不同值的格式是否正确。我们将只能检查当前运行测试的机器的值，这些值可能会随着运行的不同而变化很大。</p>
+<p class="Para" id="Par33">为了实现这一点，我们将把函数扩展到一个 Python 类中，该类既提供传感器检索到的原始值，又提供一个帮助函数来适当地格式化它(清单<a href="#PC10"> 2-7 </a>)。这种方法使得在面向用户的环境(如命令行脚本)中显示传感器的当前值更加容易，因为在周围的脚本中没有单独传感器值的特殊大小写。</p>
+<p>例如，确定有多少 RAM 可用的传感器应该显示格式化为适当单位的字节数。之前，我们假设兆字节<sup> <a epub:type="noteref" href="#Fn5" id="Fn5_source" role="doc-noteref"> 5 </a> </sup>是一个合适的单位，并使用<code>"{:.0f} MiB".format(ram_available() / 1024**2)</code>静态缩放该数字。这既太复杂，不适合一行程序，又太简单，没有普遍意义。</p><pre>class Temperature(Sensor[Optional[float]]):
+    title = "Ambient Temperature"
+
+    def value(self) -&gt; Optional[float]:
+        try:
+            # Connect to a DHT22 sensor on GPIO pin 4
+            from adafruit_dht import DHT22
+            from board import D4
+        except (ImportError, NotImplementedError):
+            # No DHT library results in an ImportError.
+            # Running on an unknown platform results in a
+            # NotImplementedError when getting the pin
+            return None
+        try:
+            return DHT22(D4).temperature
+        except RuntimeError:
+            return None
+
+    @staticmethod
+    def celsius_to_fahrenheit(value: float) -&gt; float:
+        return value * 9 / 5 + 32
+
+    @classmethod
+    def format(cls, value: Optional[float]) -&gt; str:
+        if value is None:
+            return "Unknown"
+        else:
+            return "{:.1f}C ({:.1f}F)".format(value, cls.celsius_to_fahrenheit(value))
+
+    def __str__(self) -&gt; str:
+        return self.format(self.value())
+
+Listing 2-7New temperature sensor implementation from sensors.py
+
+
+</pre>
+
+<p class="Para" id="Par36">这个版本和原始版本之间最显著的区别是从函数到类的转换。这是一个简单的类，它不从基类继承，所以在包含基类的类名后面没有括号。最直接的方法，<sup> <a epub:type="noteref" href="#Fn6" id="Fn6_source" role="doc-noteref"> 6 </a> </sup> <code>value()</code>，是原始<code>ram_available()</code>函数的直接模拟，因为它提取的数据没有任何格式。</p>
+<p class="Para" id="Par38"><code>format(...)</code>方法相当于之前直接在命令行程序的显示逻辑中进行的格式化。通过使它成为 sensor 类上的一个方法，我们隐式地将格式化函数与它们使用的数据检索函数相关联。与几十个函数都在全局范围内相比，这使得理解相关的代码变得更容易，并且减少了理解模块整体的认知负荷。</p>
+Instance, Class, and Static Methods On Classes
+<p class="Para FirstParaInFormalPara" id="Par39">函数<code>celsius_to_fahrenheit(...)</code>被定义为上面有装饰器的<code>staticmethod</code>，方法<code>format(...)</code>被定义为<code>classmethod</code>，第一个参数是<code>cls</code>而不是<code>self</code>。</p>
+<p class="Para" id="Par40">这些方法的行为与标准实例方法略有不同。当你在一个类上定义一个函数时，它把 self 作为第一个参数。这使它成为一个实例方法；它只能在类的实例上调用，并且可以访问在该实例上设置的属性以及其他方法。<code>Temperature().value()</code>会返回一个结果，但是<code>Temperature.value()</code>会引出一个<code>TypeError</code>。</p>
+<p class="Para" id="Par41">在典型情况下，当在 Python 中对一个对象定义一个函数时，它在第一个位置有一个参数<code>self</code>。这被绑定到该类的一个实例，因此每个函数都可以访问存储在该类中的数据，并且可以调用具有相同访问权限的函数。当用<code>Temperature()</code>调用类对象时，返回该类的一个实例，当调用该实例上的一个方法时，它会自动将该实例作为第一个参数传递。这意味着<code>Temperature().value()</code>是检索该值所需的全部内容。只要您通过实例访问方法来调用它，您就永远不需要显式传递<code>self</code>参数。</p>
+<p class="Para" id="Par42">一个类方法以 cls <sup> <a epub:type="noteref" href="#Fn7" id="Fn7_source" role="doc-noteref"> 7 </a> </sup>作为第一个参数，指向类而不是实例。该函数仍然可以访问该类上的其他函数以及存储在该类上的任何属性，但是它不能调用实例方法，因为它没有可用的类实例。类方法可以像平常一样在实例上调用，也可以直接在类上调用。它们对于编写自定义构造函数(比如<code>from_json(...)</code>)或者使用类的其他函数或属性的实用函数非常有用。可以在类(<code>Temperature.format(21)</code>)或实例(<code>Temperature().format(21)</code>)上调用类方法；在这两种情况下，它都将接收类作为第一个参数。</p>
+<p class="Para" id="Par44">最后，静态方法是没有隐式第一个参数的方法。与类方法相比，静态方法没有明显的优势，但是隐式参数的缺失让代码的读者清楚地看到，它是一个完全独立的方法，只是为了方便起见才与类组合在一起。它也可以在类或实例上调用，如<code>Temperature.celsius_to_fahrenheit(21)</code>或<code>Temperature().celsius_to_fahrenheit(21)</code>。</p>
+
+<p class="Para" id="Par45">前面的传感器代码旨在检索和格式化传感器数据。一些传感器的<code>__init__()</code>方法可能会执行一些昂贵的<sup> <a epub:type="noteref" href="#Fn8" id="Fn8_source" role="doc-noteref"> 8 </a> </sup>设置，这是使<code>value()</code>工作所需的。我们将<code>format(...)</code>方法标记为类方法的原因是为了确保我们仍然可以在不实例化类的情况下格式化数据。这允许我们在没有相关传感器实例的情况下格式化数据，只需要它的类。</p>
+<p><code>__str__()</code>方法是 Python 的内部约定；它确定如何将对象转换为字符串表示形式。<sup> <a epub:type="noteref" href="#Fn9" id="Fn9_source" role="doc-noteref"> 9 </a> </sup>因为这只在类的实例中使用过，我们可以把它简化为“获取当前值并格式化它”因此，显示所有传感器值的代码大大缩短，更容易理解:</p><pre>@click.command(help="Displays the values of the sensors")
+def show_sensors():
+    for sensor in [PythonVersion(), IPAddresses(), CPULoad(), RAMAvailable(),
+                  ACStatus(), RelativeHumidity()]:
+        click.secho(sensor.title, bold=True)
+        click.echo(sensor)
+        click.echo("")
+
+</pre>
+
+<p class="Para" id="Par49">显示传感器值的工作几乎完全委托给了传感器本身。只需要传感器有一个返回其当前值的格式化版本的<code>__str__()</code>方法，并且有一个包含显示标题的<code>title</code>属性。</p>
+<p class="Para" id="Par50">现在我们已经重新组织了代码，使其具有独立的格式化和值提取功能，我们可以编写测试来确保值按照我们期望的格式进行格式化。和往常一样，你可以在这本书的网站上找到本章的支持文件中重新组织的代码。</p>
+
+<h3 class="Heading">pytest(测试)</h3>
+<p>为了能够运行我们的测试，首先要做的是我们需要安装 pytest 本身。我们认为这是一个开发包，因为它不是系统必须使用的，只是为了让开发人员确信它的行为符合预期。</p>
+<pre>pipenv install --dev pytest
+
+</pre>
+<p class="Para" id="Par52">这为我们的项目创建了一个新的 pytest 脚本。此时，我们可以运行<code>pipenv run pytest</code>并查看我们测试运行的结果，即运行了 0 个测试。为了测试我们有一个工作环境，我们可以创建一个样本测试。这通常由代码框架生成器来完成，其中的测试类似于<code>assert 1 == 1</code>。我们将断言包含 cli 脚本的文件中有一个我们期望看到的传感器。</p>
+<p>为此，我们创建一个新的<code>tests/</code>目录，并添加一个空的<code>__init__.py</code>和一个<code>test_sensors.py</code>，如下所示:</p>
+<pre>import sensors
+
+def test_sensors():
+    assert hasattr(sensors, 'PythonVersion')
+
+</pre>
+<h4 class="Heading">单元、集成和功能测试</h4>
+<p class="Para" id="Par54">编写测试最困难的部分是知道要编写哪些测试。编写运行整个应用程序并检查输出的测试很有诱惑力，可以像最终用户一样有效地与代码交互。这被称为<strong class="EmphasisTypeBold ">功能测试</strong>。功能测试在 web 框架中尤其流行，其中可能有许多不同的代码层进行交互，以提供诸如身份验证、会话和模板呈现等服务。虽然这确实有效地测试了是否生成了正确的输出，但是编写比确认常见情况更进一步的测试可能会很困难。</p>
+<p class="Para" id="Par55">如果我们在命令行脚本中采用这种方法，我们会看到脚本在运行时返回我们期望的值。我们将面临的直接问题是，知道我们期望的正确价值观是什么是具有挑战性的。我们的传感器中最容易预测的是 Python 版本，因为只有少数几个可能的值，但即使这样，也不可能预先知道使用的是哪个版本的 Python。</p>
+<p>例如，下面的测试使用 click 中的<code>CliRunner</code>辅助工具来模拟运行命令行工具并捕获输出:</p>
+<pre>def test_python_version_is_first_two_lines_of_cli_output ():
+    runner = CliRunner()
+    result = runner.invoke(sensors.show_sensors)
+    assert ["Python Version", "3.8"] == result.stdout.split("\n")[:2]
+
+</pre>
+<p>这看起来很好，直到有人第一次在 Python 3.7 上运行它并看到失败:</p>
+<pre>__________ test_python_version_is_first_two_lines_of_cli_output ___________
+
+    def test_python_version_is_first_two_lines_of_cli_output():
+        runner = CliRunner()
+        result = runner.invoke(sensors.show_sensors)
+&gt;       assert ["Python Version", "3.8"] == result.stdout.split("\n")[:2]
+E       AssertionError: assert ['Python Version', '3.8'] == ['Python Version', '3.7']
+E         At index 1 diff: '3.8' != '3.7'
+E         Use -v to get the full diff
+
+tests\test_sensors.py:11: AssertionError
+
+</pre>
+<p>对于许多人来说，此时自然要做的事情是更改测试，以检测系统正在运行的 Python 版本，并使用它来确定预期的结果，类似于</p>
+<pre>def test_python_version_is_first_two_lines_of_cli_output():
+    runner = CliRunner()
+    result = runner.invoke(sensors.show_sensors)
+    python_version = "{}.{}".format(sys.version_info.major, sys.version_info.minor)
+    assert ["Python Version", python_version] == (result.stdout.split("\n")[:2])
+
+</pre>
+<p>它可以在任何 Python 版本上成功运行。这是一个完全合理的改变，但是重要的是要意识到你不再测试同样的东西。记住<code>PythonVersion</code>传感器的实现是</p>
+<pre>class PythonVersion:
+    def value(self):
+        return sys.version_info
+
+    @classmethod
+    def format(cls, value):
+        return "{0.major}.{0.minor}".format(value)
+
+</pre>
+<p>因此，如果我们去掉传感器脚本中涉及的所有间接函数调用，我们的测试将有效地测试以下内容:</p>
+<pre>assert "{}.{}".format(sys.version_info.major, sys.version_info.minor) == "{0.major}.{0.minor}".format(sys.version_info)
+
+</pre>
+<p class="Para" id="Par61">编写一个测试，其中断言的结果是计算出来的，而不是事先知道的，这通常会导致一个同义反复的测试。它可能不那么明显，但在所有情况下它都是次优的。这不是<em class="EmphasisTypeItalic ">错了</em>，测试仍然在检查报头、传感器的顺序，并且显示的值是基于<code>sys.version_info</code>的，但是它看起来像是在测试版本检测，而不像是在检查传感器顺序。</p>
+<p class="Para" id="Par62">这个测试现在只是测试 Python 版本“sensor”在列表中排在第一位，并且显示了适当的标题。它不再测试 Python 版本传感器的任何行为。</p>
+<p>为了确保传感器正常工作，我们将测试分成更小的单元。我们想知道的关于<code>PythonVersion</code>传感器的事情有</p>
+<ol><li class="ListItem"><p class="Para" id="Par64">传感器的值等于<code>sys.version_info</code>。</p>
+ </li>
+<li class="ListItem"><p class="Para" id="Par65">传感器的格式化程序返回类似“3.8”的版本字符串，即 major.minor。</p>
+ </li>
+<li class="ListItem"><p class="Para" id="Par66">传感器的字符串表示是当前值的格式化版本。</p>
+ </li>
+<li class="ListItem"><p class="Para" id="Par67">CLI 输出包含标题“Python version ”,然后是格式化输出前两行值的结果。这是我们开始的测试。</p>
+ </li>
+</ol>
+
+<p class="Para" id="Par68">这些都应该是独立的测试，因为它们都是潜在的故障模式。如果我们只有检查脚本输出的功能测试，并且发现了一个错误，那么如果不调试失败的测试并了解工具的整个上下文，就不可能知道值、格式化程序或脚本集成是否不正确。</p>
+<p class="Para" id="Par69">对于其中的一些测试，我们可以完全隔离地调用函数，并查看它们的输入和输出。例如，格式化程序接受一个输入并返回一个没有副作用的输出。<sup> <a epub:type="noteref" href="#Fn10" id="Fn10_source" role="doc-noteref"> 10 </a> </sup>这种测试被称为<strong class="EmphasisTypeBold ">单元测试</strong>，因为我们一次测试的是源代码的单个逻辑<em class="EmphasisTypeItalic ">单元</em>。</p>
+<p class="Para" id="Par71">单元测试是最难在复杂代码上编写的一种测试。如果代码的结构不利于测试，就不可能写出有用的单元测试。如果我们回想一下上一章末尾的脚本版本，逻辑单元并不像它们在基于类的实现中那样定义良好。</p>
+<p class="Para" id="Par72">我们编写的每个函数都涉及到调用一些其他函数来获取它们的数据，格式化逻辑与命令行处理逻辑紧密结合在一起。单元测试也是一些最有用的测试类型，因为一个失败的单元测试可以非常准确地将损坏的代码缩小到一个位置。单元测试通常执行得非常快，并且需要最少的测试设置，这使得开发人员的体验更加令人满意。</p>
+<p class="Para" id="Par73">其他函数，比如<code>__str__()</code>方法，更加复杂，需要调用其他函数来查找结果。查找字符串值包括获取值，该值委托给库方法，然后格式化该值。这种类型的函数需要一些设置来有效地测试，因为我们需要编写测试来覆盖代码调用的库函数的行为，以便它们返回已知的值。这些类型的测试最好被描述为<strong class="EmphasisTypeBold ">集成测试</strong>，但是准确的含义很难定义。集成测试通常将少量相关的功能作为一个整体进行测试，但是不同的开发人员认为集成测试有一定的灵活性。</p>
+<p class="Para" id="Par74">集成测试是介于单元测试和功能测试之间的一个很好的媒介。通过编写覆盖一组相关功能的测试，他们确保代码库的逻辑组件在给定的输入和输出上正确工作。使用集成测试很难真正检查边缘情况，但是对于正确处理已知好的或已知坏的数据的测试来说，这是一个很好的选择。</p>
+<p class="Para" id="Par75">前面提到的四种计划的测试类型大致属于这三类测试。这些测试中的第一个测试是非常简单的函数行为是否正确。对于更复杂的传感器，这些可能更像集成测试，但区别是为了帮助我们对测试进行推理，这不是我们应该关心的事情。</p>
+<p class="Para" id="Par76">第三个测试是集成测试的一个例子。字符串表示函数调用上一步中测试的两个函数，并确保它们一起正确工作。这些测试应该相互补充；对于一个集成测试来说，顺便测试多个东西是正常的，其中一些可能与已经编写的显式单元测试重叠。</p>
+<p class="Para" id="Par77">最后，我们进行了功能测试，以确保在 CLI 程序的输出中使用了传感器。像集成测试一样，这不可避免地测试了在其他地方更适合测试的东西；你不应该试图把这件事最小化。重要的是，从功能测试的名称和注释中可以清楚地看出它要测试什么。通常，功能测试是故意广泛的，而不解释它们的逻辑，当它们由于后来的改变而失败时，这是适得其反的。如果不清楚测试在做什么，那么当它开始失败时，就不清楚错误是从哪里引入的。许多不同的问题都可能导致功能测试失败，其中一些乍看起来可能并不相关。</p>
+Tip
+<p class="Para FirstParaInFormalPara" id="Par78">当集成或功能测试由于部分代码库的更改而失败时，编写一个更具体的测试来涵盖这种情况是一个好主意。也就是说，如果功能测试失败，尝试添加一个单元或集成测试来隔离问题。一个测试证明一个已被修复的 bug 比一张过时的 JIRA 票更有用，尤其是当那个 bug 被重新引入的时候。</p>
+
+
+<h4 class="Heading">Pytest 夹具</h4>
+<p class="Para" id="Par79">对于除了最基本的功能之外的所有功能，很可能会有一些不同的情况被测试，所有的情况都应该有它们自己的测试功能。很常见的情况是需要设置代码，例如，如果函数是类成员而不是可导入的函数，则需要实例化类。一种方法是将测试组织成包含所有相关测试和所有这些测试共享的设置代码的类。</p>
+<p class="Para" id="Par80">所有的测试框架都有一些方法来提供通用的安装和拆卸代码来支持测试。在 pytest 中，这些被称为“fixtures ”,允许在不同的支持代码之间进行非常灵活的选择。Pytest fixtures 被自动调用来匹配测试函数的参数。</p>
+<p class="Para" id="Par81">组织测试的一个好方法是定义一个类来包含相关的测试和任何特定于这些测试的固定装置，并保留更多的通用固定装置供其他测试使用。这允许使用一种通常被称为“被测试主题”的风格，或 SUT。你可能会看到 FUT(被测函数)、MUT(被测方法)、OUT(被测对象)等等。</p>
+<p class="Para" id="Par82">在这个测试布局中，每个类都有一个类似于<code>MUT()</code>、<code>method()</code>或<code>subject()</code>的 fixture，它返回要测试的函数。<sup><a epub:type="noteref" href="#Fn11" id="Fn11_source" role="doc-noteref">11</a></sup>FUT 的 fixture 可能只是导入函数并返回它，而 MUT 作为一个类方法，可能涉及创建一个类的实例并从该实例返回特定的方法。这使得单个函数可以测试一个可调用函数，而不必担心该可调用函数是如何获得的，这在测试采用许多参数进行构造的类的方法时特别有用。</p>
+<p>首先，我们将创建一个测试类，用于测试 Python 版本号传感器的格式化程序，并为其提供一系列要测试的值。这包括一个版本传感器的测试文件(列表<a href="#PC19"> 2-8 </a>),它提供了一个代表被测传感器的<code>sensor</code> fixture 和一个 TestPythonVersionFormatter 类，该类使用 subject fixture 将 MUT 定义为该传感器的格式方法。</p>
+<pre>from collections import namedtuple
+
+import pytest
+
+from sensors import PythonVersion
+
+@pytest.fixture
+def version():
+    return namedtuple(
+        "sys_versioninfo", ("major", "minor", "micro", "releaselevel", "serial")
+    )
+
+@pytest.fixture
+def sensor():
+    return PythonVersion()
+
+class TestPythonVersionFormatter:
+    @pytest.fixture
+    def subject(self, sensor):
+        return sensor.format
+
+    def test_format_py38(self, subject, version):
+        py38 = version(3, 8, 0, "final", 0)
+        assert subject(py38) == "3.8"
+
+    def test_format_large_version(self, subject, version):
+        large = version(255, 128, 0, "final", 0)
+        assert subject(large) == "255.128"
+
+    def test_alpha_of_minor_is_marked(self, subject, version):
+        py39 = version(3, 9, 0, "alpha", 1)
+        assert subject(py39) == "3.9.0a1"
+
+    def test_alpha_of_micro_is_unmarked(self, subject, version):
+        py39 = version(3, 9, 1, "alpha", 1)
+        assert subject(py39) == "3.9"
+
+Listing 2-8Initial version of test_pythonversion.py
+
+
+</pre>
+<p class="Para" id="Par85"><code>version</code> fixture 提供了一个看起来类似于<code>sys.version_info</code>结果的结构，因为 Python 在内部使用的特定对象类型不能用新值实例化。这确保了我们可以创造与<code>sys.version_info</code>行为相同的价值观，但我们可以控制他们的价值观。</p>
+<p class="Para" id="Par86">这些测试可以用<code>pipenv run pytest tests</code>来运行，并且它们通过了，但是任何使用过其他单元测试框架的读者可能会担心我们在夹具上移动了太多，并且可能很难调试问题。具体来说，看一眼代码就不清楚<code>subject</code>指的是什么。为了证明这没有问题，我们将添加一个新的失败测试来覆盖我们想要添加的特性。</p>
+<p>我们的格式化程序在这里只显示了发行版的主要和次要组件，假设微版本不包含任何显著的变化来突出显示。然而，在我写这篇文章的时候，有一个新的 Python 版本处于 alpha 阶段，alpha 版本之间的差异在新特性的增加方面非常显著。为此，在新的次要行中的第一个微发布的特殊情况预发布版本可能是有用的。我将添加一对新的测试来证明我们期望 3.9.0a1 有不同的输出(但是要回到 3.9.1a1 的缺省值)。</p>
+<pre>    def test_prerelease_of_minor_is_marked(self, subject, version):
+        py39 = version(3, 9, 0, "alpha", 1)
+        assert subject(py39) == "3.9.0a1"
+
+    def test_prerelease_of_micro_is_unmarked(self, subject):
+        py39 = (3, 9, 1, "alpha", 1)
+        assert subject(py39) == "3.9"
+
+</pre>
+<p class="Para" id="Par88">这两项测试中的一项失败，另一项通过。这里添加两个测试的原因是为了清楚地表明，alpha 标记只对 micro 版本为 0 的情况有影响。如果没有第二个测试，如果所有预发布版本都显示完整的版本字符串，我们就会有一个通过测试的套件，这不是我们要找的特性。</p>
+<p>如果我们现在重新运行测试，我们将会看到<code>test_prerelease_of_minor_is_marked</code>测试的失败以及 pytest 自动包含的大量上下文信息:</p>
+<pre>________ TestPythonVersionFormatter.test_alpha_of_minor_is_marked ________
+
+self = &lt;tests.test_pythonversion.TestPythonVersionFormatter object at 0x03BA4670&gt;
+subject = &lt;bound method PythonVersion.format of &lt;class 'sensors.PythonVersion'&gt;&gt;
+version = &lt;class 'tests.test_pythonversion.sys_versioninfo'&gt;
+
+    def test_alpha_of_minor_is_marked(self, subject, version):
+        py39 = version(3, 9, 0, "alpha", 1)
+&gt;       assert subject(py39) == "3.9.0a1"
+E       AssertionError: assert '3.9' == '3.9.0a1'
+E         - 3.9
+E         + 3.9.0a1
+
+tests\test_pythonversion.py:28: AssertionError
+=============== 1 failed, 3 passed in 0.11 seconds ========================
+
+</pre>
+<p class="Para" id="Par90">报告的第一件事是失败的测试的名称，随后是正在使用的夹具的表示。这些都显示在失败信息的顶部，所以我们一眼就能看出<code>subject</code> fixture 是<code>PythonVersion</code>类的一个实例<sup> <a epub:type="noteref" href="#Fn12" id="Fn12_source" role="doc-noteref"> 12 </a> </sup>的<code>format</code>方法。</p>
+<p class="Para" id="Par92">接下来要显示的是测试方法的主体，直到导致错误的那一行，然后是格式化错误。在这种情况下，这是一个断言错误，因为断言行失败了。我们看到了扩展版本的断言，所以我们可以看到<code>subject(py39)</code>的计算结果，然后在下面我们看到了两个字符串的差异。在这种情况下，diff 不是特别有用，但是对于较长的字符串，逐行进行 diff 是很方便的。</p>
+<p>如果我们要将格式化程序方法改为</p>
+<pre>    @classmethod
+    def format(cls, value):
+        if value.micro == 0 and value.releaselevel == "alpha":
+            return "{0.major}.{0.minor}.{0.micro}a{0.serial}".format(value)
+        return "{0.major}.{0.minor}".format(value)
+
+</pre>
+<p class="Para" id="Par94">并重新运行测试，我们将会看到一个确认，确认<code>test_pythonversion.py</code>中的所有测试都已通过。</p>
+<h5 class="Heading">分类测试功能</h5>
+<p class="Para" id="Par95">我们已经决定为我们的代码编写多种不同类型的测试，涵盖从单元测试到全栈功能测试的所有内容。由于功能测试比单元测试慢得多，我们可能希望不时地将它们排除在测试运行之外，只快速运行测试的快速子集。如果我们期望看到测试失败，这可以节省大量的时间，所以我们可以避免运行更长的验证测试，直到我们知道在快速的单元测试中没有失败。</p>
+<p>这可以使用<code>@pytest.mark</code>装饰器来完成。我们将使用“功能”标记将我们的<code>test_python_version_is_first_two_lines_of_cli_output</code>标记为功能测试。</p>
+<pre>@pytest.mark.functional
+def test_python_version_is_first_two_lines_of_cli_output():
+    runner = CliRunner()
+    result = runner.invoke(sensors.show_sensors)
+    python_version = str(sensors.PythonVersion())
+    assert ["Python Version", python_version] == result.stdout.split("\n")[:2]
+
+</pre>
+<p>这允许我们用<code>pytest -m functional</code>调用测试，只运行功能测试</p>
+<pre>============ 1 passed, 5 deselected, 1 warnings in 3.17 seconds ============
+
+</pre>
+<p>或者使用<code>pytest -m "not functional"</code>运行除功能测试之外的所有测试:</p>
+<pre>============ 5 passed, 1 deselected, 1 warnings in 0.11 seconds ============
+
+</pre>
+<p class="Para" id="Par99">运行功能测试的开销是巨大的，运行一个功能测试的时间是运行五个单元测试的 30 倍。3 秒钟的测试运行并没有慢到让你不敢运行测试，但是我们才刚刚开始编写测试套件。当它大 10 倍时，它将是 30 秒的测试和 1 秒之间的差异。如果你的测试对你来说太麻烦而不想运行，那么它们就不会那么有用。</p>
+<p>仅仅通过使用@ <code>pytest.mark.something</code>作为修饰符就可以创建任意的标记，但是会生成一个警告，告诉您它还没有被显式声明。这些警告对于发现标记名中的印刷错误很有用，所以我们应该创建一个<code>pytest.ini</code>文件，声明我们使用了一个<code>functional</code>标记。</p>
+<pre>[pytest]
+markers = functional: these tests are significantly slower
+
+</pre>
+
+
+<h4 class="Heading">新闻报道</h4>
+<p class="Para" id="Par101">代码覆盖率是衡量测试套件范围的一个标准。它表示在测试运行期间执行的应用程序基本代码的比例。有些人强烈认为高水平的测试覆盖是必要的，甚至经常说所有软件都应该 100%覆盖。</p>
+<p class="Para" id="Par102">我鼓励你采取更务实的观点。一个测试套件能做的最重要的事情是给你信心，让你相信软件正在按预期运行。高覆盖率通常与自信相关，我鼓励你以高覆盖率为目标，但这不应该给你一种错误的安全感。特别是，当您接近 100%的测试覆盖率时，确保覆盖最后几行变得越来越困难，但是好处是不变的。覆盖面较低、易于理解的测试套件比过于复杂、达到 100%的测试套件要好。</p>
+<p>为了实现代码覆盖率，我们需要一个 pytest 插件来收集数据。最简单的方法是使用<code>pipenv install --dev pytest-cov</code>安装 pytest-cov 插件。一旦完成，pytest 可执行文件中的<code>--cov</code>参数就可用了。此参数将部分代码库的路径作为可选参数。如果提供了这个，那么覆盖率报告只显示这个子路径的覆盖率数据。要查看所有代码的覆盖范围，请使用 just - cov，如下所示:</p>
+<pre>&gt; pipenv run pytest tests --cov
+
+</pre>
+<p>我们还应该创建一个<code>.coveragerc</code>文件来配置我们想要看到的覆盖报告。最重要的事情是排除测试目录，因为在运行测试时被执行的测试文件的比例不是一个有用的度量，并且扭曲了我们的平均值。</p>
+<pre>[run]
+branch = True
+omit = tests/*
+
+</pre>
+<p>我们还添加了分支配置参数，该参数更改了覆盖率的计算，以便在同时满足<code>True</code>和<code>False</code>条件时，只考虑覆盖 if 语句。如果我们运行带有<code>--cov</code>标志的测试，我们可以看到我们的项目到目前为止的覆盖率:</p>
+<pre>----------- coverage: platform win32, python 3.8.0-alpha-1 -----------
+Name         Stmts   Miss Branch BrPart  Cover
+----------------------------------------------
+sensors.py     121     17     22      7    83%
+
+========================= 8 passed in 3.23 seconds =========================
+
+</pre>
+<p>这表明，我们的测试运行检测到 83%的代码已经被测试套件覆盖，这恰恰证明了为什么我们应该怀疑覆盖率数字作为测试质量的度量。请记住，我们只为脚本中的七个传感器中的一个编写了测试，所以 83%的代码都以任何有意义的方式进行了测试的说法显然是错误的。这是由运行脚本并查看输出的功能测试导致的，因为它会导致所有代码被执行。如果我们重新运行测试，排除功能测试，我们得到</p>
+<pre>----------- coverage: platform win32, python 3.8.0-alpha-1 -----------
+Name         Stmts   Miss Branch BrPart  Cover
+----------------------------------------------
+sensors.py     121     62     22      1    43%
+
+================== 7 passed, 1 deselected in 0.38 seconds ==================
+
+</pre>
+<p class="Para" id="Par107">考虑到我们所写的测试数量，43%似乎还是一个过高的估计，但是覆盖率选项可以让我们看到哪些行被覆盖了，哪些行被遗漏了。有几种不同的显示方式，但它们都由<code>--cov-report</code>标志控制。包括了许多机器可读的格式，比如 XML 格式，如果您使用持续集成，这是很有用的，但是对于直接的人类消费，两个最有用的是<code>--cov-report html</code>和<code>--cov-report annotate</code>。</p>
+<p>HTML 报告格式创建了一个名为<code>htmlcov</code>的目录，其中包含一个 index.html 文件，该文件列出了总体覆盖率和每个文件的覆盖率。通过点击您感兴趣的文件名，您会看到一个文件内容列表，在覆盖率报告中，这些文件内容的线条用它们的状态进行了颜色编码，如图<a href="#Fig1"> 2-1 </a>所示。<sup> <a epub:type="noteref" href="#Fn13" id="Fn13_source" role="doc-noteref"> 13 </a> </sup></p>
+<p><img alt="../images/481001_1_En_2_Chapter/481001_1_En_2_Fig1_HTML.jpg" src="../images/481001_1_En_2_Chapter/481001_1_En_2_Fig1_HTML.jpg" style="width:37.5em"/></p>
+<p>图 2-1</p><p class="SimplePara">不运行功能测试时，覆盖线和未覆盖线的可视化表示</p>
+
+
+<p class="Para" id="Par110">带有绿色边框且没有阴影的线条是被覆盖的线条。测试套件已经执行了这些行。带有红色边框和红色阴影的线是未覆盖的线。这些没有被执行。假设启用了分支覆盖，一些线可能会有黄色边框，并带有黄色阴影。这些是被部分覆盖的行，例如文件底部的<code>if __name__== "__main__"</code>构造。因为 if 语句的主体是红色的，所以很明显包含了条件评估为<code>False</code>的情况，但是没有包含条件评估为<code>True</code>的情况。</p>
+<p class="Para" id="Par111">或者，<code>annotate</code>报告类型在与 sensors.py 相同的目录下创建一个<code>sensors.py,cover</code>文件。前缀为<code>&gt;</code>的行被覆盖或部分覆盖；前缀为<code>!</code>的线未被覆盖。与前面的 HTML 截图匹配的<code>sensors.py,cover</code>部分如清单<a href="#PC31"> 2-9 </a>所示。</p>
+<p>
+ 
+</p>
+<pre>&gt; class PythonVersion:
+&gt;     title = "Python Version"
+
+&gt;     def value(self):
+&gt;         return sys.version_info
+
+&gt;     @classmethod
+&gt;     def format(cls, value):
+&gt;         if value.micro == 0 and value.releaselevel == "alpha":
+&gt;             return "{0.major}.{0.minor}.{0.micro}a{0.serial}".format(value)
+&gt;         return "{0.major}.{0.minor}".format(value)
+
+&gt;     def __str__(self):
+&gt;         return self.format(self.value())
+
+&gt; class IPAddresses:
+&gt;     title = "IP Addresses"
+
+&gt;     def value(self):
+!         hostname = socket.gethostname()
+!         addresses = socket.getaddrinfo(socket.gethostname(), None)
+
+!         address_info = []
+!         for address in addresses:
+!             value = (address[0].name, address[4][0])
+!             if value not in address_info:
+!                 address_info.append(value)
+!         return address_info
+
+Listing 2-9sensors.py,cover representing coverage when not running functional tests
+
+
+</pre>
+<p class="Para" id="Par113">我发现 HTML 报告更容易使用，但您的偏好可能会有所不同。无论哪种方式，我们都可以看到除了<code>PythonVersion</code>之外的各种传感器的函数体都没有覆盖，但是类和函数定义都覆盖了。这是有意义的，因为 Python 解释器必须执行声明行来知道哪些函数、类和类属性是可用的。由于我们的函数体相对较短，测试过的函数体加上类和函数声明几乎占了语句行的一半。</p>
+Exercise 2-2: Expanding The Test Suite
+<p class="Para FirstParaInFormalPara" id="Par114">我们已经为一个最简单的传感器编写了测试，但是还有其他几个传感器没有经过测试。通过向其他传感器添加测试来练习编写一些测试。</p>
+
+<p class="Para" id="Par115">大多数传感器都遵循相同的模式，只有温度和湿度传感器例外，这种传感器要编写覆盖 value 方法的测试有些困难。</p>
+<p class="Para" id="Par116">如果您可以编写一个测试套件，在使用<code>-m "not functional"</code>运行时覆盖 75%的 sensors.py，那么您就有了一个测试套件，它应该会让您对整个程序充满信心。</p>
+
+
+
+<h2 class="Heading">类型检查</h2>
+<p class="Para" id="Par117">我们在测试套件上所做的工作给了我们很大的信心，让我们相信我们所写的代码会如我们所愿的那样运行，但它对我们正确使用它的信心没有太大的帮助。我们在许多传感器中大量使用了 psutil 库，但没有为此编写任何直接测试。一些程序员陷入了编写测试的陷阱，这些测试更多的是测试他们的依赖库，而不是他们自己的代码。</p>
+<p class="Para" id="Par118">如果您觉得自己需要编写测试来涵盖您的代码所依赖的库的工作方式，那么您应该后退一步，考虑最佳的行动方案是什么。作为测试套件的一部分，为库编写测试要比在消费者应用程序的测试中容易得多。</p>
+<p class="Para" id="Par119">当人们使用第三方库时，他们通常需要的是正确使用它的信心:一致地传递参数，处理异常和不寻常的返回值，以及理解函数打算做什么。没有自动的方法来检查我们的理解，但是类型检查确实允许我们检查一些其他的情况。</p>
+<p class="Para" id="Par120">如果您使用过像 Java 这样的编程语言，您就会熟悉彻底的类型检查器对代码的影响:不可能忽略异常或调用带有无效值的函数，但对其他人来说，这可能会有很大的限制。</p>
+<p class="Para" id="Par121">Python 最近获得了可选地用类型注释变量的语法，以允许在基本 Python 语言之上构建类型检查。Python 本身并不为您做任何类型检查，但是 mypy 项目提供了一个对您的 Python 代码运行静态类型检查的程序。</p>
+<h3 class="Heading">安装 mypy</h3>
+<p>Mypy 是作为 Python 模块分发的，因此它的安装方式与我们的其他开发依赖项一样，使用</p>
+<pre>&gt;  pipenv install --dev mypy
+
+</pre>
+<p class="Para" id="Par123">这将 mypy 可执行文件添加到我们的环境中，并安装 mypy 类型检查库和类型定义的 typeshed 集合。Python 标准库不包含类型检查提示，在撰写本文时，大多数第三方库也不包含。类型注释本来就是一个可选的特性，所以许多开发人员选择不使用它们也就不足为奇了。Typeshed 是 Python 软件基金会的一个项目，为标准库和各种常用的第三方库维护一组类型声明。</p>
+<p>也就是说，许多库既不提供类型注释，也没有类型化的条目，所以当我们对使用它们的代码运行类型检查时，它会生成类型警告。如果我们在代码中调用 mypy，我们会看到关于<code>psutil</code>的错误，以及可选的依赖项<code>adafruit_dht</code>和<code>board</code>。</p>
+<pre>&gt; pipenv run mypy sensors.py
+sensors.py:9: error: No library stub file for module 'psutil'
+sensors.py:9: note: (Stub files are from https://github.com/python/typeshed)
+sensors.py:116: error: Cannot find module named 'adafruit_dht'
+sensors.py:116: note: See https://mypy.readthedocs.io/en/latest/running_mypy.html#missing-imports
+sensors.py:117: error: Cannot find module named 'board'
+
+</pre>
+<p>解决这个问题有两种方法:忽略它和修复它。几乎在所有情况下，将 mypy 配置为忽略这些问题比向代码使用的所有依赖项添加类型提示更能有效地利用时间。为此，我们需要添加一个 mypy 配置文件，或者作为<code>mypy.ini</code>或者作为<code>setup.cfg</code>文件的一部分，它可以包含多个不同工具的配置。添加以下内容作为<code>setup.cfg</code>,并重新运行 mypy，查看它是否完整，没有任何警告:</p>
+<pre>[mypy]
+ignore_missing_imports = True
+
+</pre>
+
+<h3 class="Heading">添加类型提示</h3>
+<p>由于我们的代码目前相对简单，所以检查传感器和添加类型提示并不困难。Python 使用的格式是</p>
+<pre>def function_name(argument: type, other: type) -&gt; type:
+
+</pre>
+<p>所以，我们的<code>CPULoad</code>传感器看起来会像</p>
+<pre>class CPULoad:
+    title = "CPU Usage"
+
+    def value(self) -&gt; float:
+        return psutil.cpu_percent(interval=3) / 100.0
+
+    @classmethod
+    def format(cls, value: float) -&gt; str:
+        return "{:.1%}".format(value)
+
+    def __str__(self) -&gt; str:
+        return self.format(self.value())
+
+</pre>
+<p class="Para" id="Par128"><code>value</code>函数的返回值总是与<code>format</code>函数的<code>value</code>参数相同。一旦添加了这个，我们就可以直接用 mypy 做实验了。例如，我们可以创建一个误用传感器的新文件，如清单<a href="#PC37"> 2-10 </a>所示。</p>
+<p>
+ 
+</p>
+<pre>import sensors
+
+sensor = sensors.CPULoad()
+print("The CPU load is " + sensor.value())
+
+Listing 2-10incorrect.py
+
+
+</pre>
+<p>Mypy 可以通过分析包含错误代码的文件和 sensors.py 文件来发现此错误，从而导致以下错误:</p>
+<pre>&gt; pipenv run mypy incorrect.py
+incorrect.py:4: error: Unsupported operand types for + ("str" and "float")
+
+</pre>
+<p class="Para" id="Par131">然而，有些传感器更复杂。<code>ACStatus</code>、<code>Temperature</code>和<code>RelativeHumidity</code>传感器都有一个值，如果由于某种原因无法确定该值，则该值可以是<code>None</code>。对于这些，我们需要声明不同的返回类型。Python 的类型允许将类型包装到容器中，与其他语言中的泛型类似。<code>typing.Union</code>类型定义了一个类型，它是许多不同选项中的一个。在我们的例子中，<code>ACStatus.value</code>返回<code>typing.Union[bool, None]</code>，温度传感器返回<code>typing.Union[float, None]</code>。</p>
+<p>我们可以通过使用<code>Optional</code>类型来进一步简化。<code>Optional</code>是<code>Union</code>的特例，它接受一个类型参数，而<code>Union</code>不接受任何类型参数。它的行为并没有什么不同；只是更容易阅读。因此，我们的<code>ACStatus.value()</code>功能就变成了</p>
+<pre>    def value(self) -&gt; typing.Optional[bool]:
+        battery = psutil.sensors_battery()
+        if battery is not None:
+            return battery.power_plugged
+        else:
+            return None
+
+</pre>
+<p>最后，<code>IPAddresses</code>传感器的值是一个更复杂的对象。每个 IP 地址由一个二元元组表示，包含地址族和地址本身的字符串表示。传感器返回这些二元组的列表。我们可以将此声明为</p>
+<pre>    def value(self) -&gt; typing.List:
+        ...
+
+</pre>
+<p>但是如果我们这样做了，返回值<code>[None, None, None]</code>将被认为是有效的。我们可以声明更多的列表内部结构，以确保 mypy 能够严格执行检查。声明<code>List</code>内部的语法与<code>Union</code>相同。对于<code>(str, str)</code>二元组的列表，我们将使用</p>
+<pre>    def value(self) -&gt; typing.List[typing.Tuple[str, str]]:
+        ...
+
+</pre>
+<p class="Para" id="Par135">这并不能防止数据结构与预期相匹配的任何错误，因为我们仍然不能自动检查语义，但它确实防止了几类打字错误和疏忽。例如，我们无法防止在元组中混合两个值，但是我们无法假设元组是直接返回的，或者返回类型是包含 IP 地址的字符串列表，而没有地址族信息。</p>
+<p class="Para" id="Par136">对于这个传感器，我们可能希望在格式上放松返回值的返回类型和参数类型之间的对称性。在所有其他传感器中，这些都是完全相同的，因为我们只想能够格式化我们收到的数据。在某些情况下，在格式化程序中更加灵活可能会有用。格式化程序的类型定义应该表示可能被格式化的数据，而不是我们期望的数据。我们可以格式化任何包含至少两个元素的可索引序列的 iterable，这两个元素都是字符串。如果我们传入一个列表元组，我们的格式化程序代码就像传入一个元组列表一样有效。</p>
+<p>以下类型都是有效的选择:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para ParaOneEmphasisChild" id="Par138"><code>List[Tuple[str, str]]</code></p></li>
+<li><p class="Para ParaOneEmphasisChild" id="Par139"><code>List[Sequence[str]]</code></p></li>
+<li><p class="Para ParaOneEmphasisChild" id="Par140"><code>Sequence[Tuple[str, str]]</code></p></li>
+<li><p class="Para ParaOneEmphasisChild" id="Par141"><code>Sequence[Sequence[str]]</code></p></li>
+<li><p class="Para ParaOneEmphasisChild" id="Par142"><code>Iterable[Tuple[str, str]]</code></p></li>
+<li><p class="Para ParaOneEmphasisChild" id="Par143"><code>Iterable[Sequence[str]]</code></p></li>
+</ul>
+
+<p>语义略有不同。使用<code>Sequence</code>而不是<code>List</code>允许外部变量类型是列表或元组，使用<code>Iterable</code>作为外部类型允许它是列表、元组、集合或生成器。如果我们对内部类型使用<code>Sequence[str]</code>而不是<code>Tuple[str, str]</code>，我们获得了内部类型成为列表的灵活性，但是我们失去了关于序列内部结构的断言。其中，我认为最好的选择是</p>
+<pre>def format(cls, value: Iterable[Tuple[str, str]]) -&gt; str:
+
+</pre>
+<p class="Para" id="Par145">因为它是不允许无效数据的限制性最小的类型提示。</p>
+Tip
+<p class="Para FirstParaInFormalPara" id="Par146">您可能希望先使用<code>import typing as t</code>，然后使用<code>t.Union[...]</code>、<code>t.Sequence[...]</code>等等，而不是单独导入所有这些标记类型。这使得这些类型是类型提示的一部分这一事实对于偶尔阅读源代码的人来说更加清楚，并且避免了在添加具有新类型签名的函数时必须管理导入。</p>
+
+
+<h3 class="Heading">子类和继承</h3>
+<p class="Para" id="Par147">对于不习惯在编写由 mypy 检查的代码时使用类型提示的 Python 开发人员来说，最令人困惑的事情可能是，与他们习惯的相比，使用了更严格的类型继承视图。到目前为止，在我们的传感器文件中，我们有许多共享相同的<code>__str__()</code>方法实现的类。想要将这些移动到一个超类是很自然的。您可能很自然地认为这对类型提示有很大的好处，因为它允许编写显式操作<code>Sensor</code>的子类的代码。</p>
+<p class="Para" id="Par148">这样做的问题是我们没有一个用于<code>Sensor</code>的公共接口。我们有几个行为相似的子类，但是它们不能互换。如果你知道你有一个 Sensor 的实例，那么你知道你有一个 value 函数，但是你没有更具体的保证关于这个函数的输出是什么。</p>
+<p class="Para" id="Par149">如果我们要向超类添加一个<code>__str__()</code>方法，那么这个方法需要在超类本身上进行类型检查。如果<code>value()</code>或<code>format(...)</code>方法缺失，那么类型检查将会失败，不管这些方法是否在子类上实现。类型检查肯定会失败，因为基类本身不会孤立地工作。同样，如果我们在超类上定义了 stub <code>value()</code>和<code>format(...)</code>方法，那么这些定义将用于确定<code>__str__()</code>方法是否正确，而不是单个子类上的定义。</p>
+<p class="Para" id="Par150">这就是静态类型化和动态类型化区别的症结所在。在动态类型的语言中，你可以相信事情<em class="EmphasisTypeItalic ">发生</em>为真，而在静态类型的环境中，你的断言必须<em class="EmphasisTypeItalic ">必然</em>为真。</p>
+<p>想象一下我们在这里定义的超类。我们编写的非类型化 Python 的基本代码是</p>
+<pre>class Sensor:
+    def __str__(self):
+        return self.format(self.value())
+
+</pre>
+<p class="Para" id="Par152">用<code>__str__(self) -&gt; str</code>在一个类型化的上下文中写这个，会导致函数被类型检查，从而产生错误<code>"Sensor" has no attribute "format"</code>。所以，我们需要添加占位符<code>format(...)</code>和<code>value()</code>方法。问题是，value 方法应该返回什么类型？我们有返回<code>float</code>、<code>Optional[bool]</code>、<code>Optional[float]</code>或<code>List[Tuple[str, str]]</code>的传感器。存根方法不能使用这些返回类型中的任何一种，因为它们与其他选项不兼容。如果我们使用特殊的<code>typing.Any</code>类型，它有效地禁用了这个方法的类型检查。如果我们对<code>value()</code>方法使用极其冗长的<code>Union[float, Optional[bool], Optional[float], List[Tuple[str, str]]]</code>，那么我们说所有这些类型作为任何给定传感器的输出都是同样有效的。</p>
+<p>如果我们试图使用相同的<code>Union</code>作为<code>format(...)</code>方法的参数类型，那么我们会遇到一个更微妙的错误。所有的子类都受到它们的超类的类型限制，但是这以不同的方式表现出来。当指定一个函数的输出时，子类必须返回一个和超类定义一样具体或者比超类定义更具体的值。因此</p>
+<pre>class Sensor:
+    ...
+    def value(self) -&gt; Union[float, Optional[bool], Optional[float], List[Tuple[str, str]]]:
+        raise NotImplementedError
+
+class ToySensor(Sensor):
+    ...
+    def value(self) -&gt; Optional[bool]:
+        return True
+
+</pre>
+<p class="Para" id="Par154">是完全有效的，因为任何期望一个<code>Sensor</code>并被给予一个<code>ToySensor</code>的消费者总是会找到一个值方法，当它期望几个可能的值之一时，返回<code>Optional[bool]</code>，包括<code>Optional[bool]</code>。</p>
+<p>这与处理函数参数的方式相反。在<code>format(...)</code>函数的情况下，超类的类型定义向该类的用户保证<em class="EmphasisTypeItalic ">传递的任何</em>值类型都是可接受的；子类不能对此进行限制，因为这意味着调用代码必须明确知道正在使用哪个传感器。因此，下面的代码会失败:</p>
+<pre>class Sensor:
+    ...
+    def format(self, value:Union[float, Optional[bool], Optional[float], List[Tuple[str, str]]]) -&gt; str:
+        raise NotImplementedError
+
+class ToySensor(Sensor):
+    ...
+    def format(self, value: Optional[bool]) -&gt; str:
+        return "Yes"
+
+</pre>
+<p>有错误</p>
+<pre>Argument 1 of "format" incompatible with supertype "Sensor".
+
+</pre>
+<p>这里有两种方法可以采用，选择哪一种将在很大程度上取决于您从类型检查中获得多少好处。最简单的方法是让一些函数保持非类型化，无论是隐式的还是显式的。保持这种非类型化将意味着我们在处理一般的传感器时，只有在处理特定的单个传感器时，才能获得类型检查的显著好处。对于许多应用程序来说，这可能就足够了，而且肯定会更简单。为此，我们将创建一个传感器超类，如下所示:</p>
+<pre>class Sensor:
+
+    def value(self) -&gt; Any:
+        raise NotImplementedError
+
+    @classmethod
+    def format(cls, value: Any) -&gt; str:
+        raise NotImplementedError
+
+    def __str__(self) -&gt; str:
+        return self.format(self.value())
+
+</pre>
+<p class="Para" id="Par158">我们未来的所有代码都将限制类型检查，因为<code>__str__()</code>和<code>format(...)</code>方法总是返回字符串。不会对值类型进行任何检查。</p>
+
+<h3 class="Heading">泛型类型</h3>
+<p class="Para" id="Par159">另一种方法是全力进行类型检查。我们已经看到,<code>typing.List</code>类型可以接受参数来指定列表的内容。同样，我们可以告诉类型系统,<code>Sensor</code>基类接受一个类型参数，该参数表示传感器操作的类型。</p>
+<p>增加指定包含类型的能力被称为使类型<em class="EmphasisTypeItalic ">通用化</em>。我们需要将 Sensor 转换为具有单一类型变量的泛型类型，该类型变量既用作值函数的返回类型，也用作超类的参数类型。</p>
+<pre>T_value = TypeVar("T_value")
+
+class Sensor(Generic[T_value]):
+
+    def value(self) -&gt; T_value:
+        raise NotImplementedError
+
+    @classmethod
+    def format(cls, value: T_value) -&gt; str:
+        raise NotImplementedError
+
+    def __str__(self) -&gt; str:
+        return self.format(self.value())
+
+</pre>
+<p class="Para" id="Par161">在这里，<code>T_value</code>不是一个类型；它是一个占位符，代表使用方括号语法在<code>Sensor</code>上指定的值的类型。如果有一个类型为<code>Sensor[str]</code>的变量，那么 mypy 将该变量的<code>T_value</code>与<code>str</code>相关联，因此<code>value()</code>和<code>format(...)</code>方法都与<code>str</code>相关联。重要的是，与<code>T_value</code>相关的类型因传感器而异；它不局限于单个类型，而是与任何特定代码段声明的<code>Sensor</code>的子类型动态关联。</p>
+<p>传感器本身使用<code>Sensor[type]</code>作为它们的基类，但是仍然需要在函数上声明它们自己的类型提示。当 mypy 分析父类的类型提示时，它要求所有子类都必须定义类型提示才能参与类型检查。这看起来像是浪费时间，但这让任何阅读代码的人都清楚地知道所需的类型，而不必阅读超类。它还允许检查代码在子类中的内部一致性，以及它与超类的断言的一致性。结果是真实的传感器实现看起来像清单<a href="#PC49"> 2-11 </a>。</p>
+<pre>class CPULoad(Sensor[float]):
+    title = "CPU Usage"
+
+    def value(self) -&gt; float:
+        return psutil.cpu_percent(interval=3) / 100.0
+
+    @classmethod
+    def format(cls, value: float) -&gt; str:
+        return "{:.1%}".format(value)
+
+Listing 2-11Typed version of sensors
+
+
+</pre>
+Caution
+<p class="Para FirstParaInFormalPara" id="Par163">在前面的<code>CPULoad</code>传感器示例中，我们有<code>value(self) -&gt; float</code>，但是我们可以将其更改为<code>value(self) -&gt; int</code>甚至<code>value(self) -&gt; bool</code>，而不会看到任何错误。这是一个支持更简单的 duck 类型的不幸的设计决定。论点是，任何接受浮点数的函数都可以接受整数，虽然不完全正确，但对于大多数目的来说已经足够接近了。此外，在 Python 中<code>bool</code>是<code>int</code>的子类，所以接受浮点数的函数也可以接受布尔值而不会引发错误。因此，一个预期返回一个<code>float</code>但返回一个<code>bool</code>的函数被视为返回兼容的东西。我希望这可能会在未来产生警告。现在，你应该记住这个限制。</p>
+
+<p class="Para" id="Par164"><code>T_value</code>绑定到指定的子类型这一事实的一个令人惊讶的结果就是<code>Sensor[Any]</code>的含义。这似乎意味着任何有效的<code>Sensor</code>，但实际上它意味着一个其值未经类型检查的<code>Sensor</code>。使用<code>Sensor[Any]</code>仍然比完全不使用类型检查有好处。虽然类型检查器无法检查在处理 value 参数时运行在循环<code>Iterable[Sensor[Any]]</code>上的代码的类型安全性，但是关于存在<code>title</code>属性和公共<code>__str__()</code>方法的断言在所有传感器类型中都是通用的，因此仍然可以检查。</p>
+
+<h3 class="Heading">调试和过度使用打字</h3>
+<p class="Para" id="Par165">使用 mypy 时，查看调试信息有时会很有用。Mypy 没有交互式调试器，所以如果我们在理解错误发生的原因方面有问题，我们必须通过 reveal_type 函数求助于 printf 风格的调试。</p>
+<p>例如，让我们创建一个测试脚本，它以不正确的方式使用 sensors.py 中的一些代码:</p>
+<pre>from sensors import CPULoad
+
+sensor = CPULoad()
+print(sensor.format("3.2"))
+
+</pre>
+<p>如果我们调用 pipenv run mypy broken.py，我们将得到以下预期的错误:</p>
+<pre>broken.py:4: error: Argument 1 to "format" of "CPULoad" has incompatible type "str"; expected "float"
+
+</pre>
+<p>但是如果我们把 broken.py 更新得更复杂一点</p>
+<pre>from sensors import CPULoad, ACStatus
+
+two_sensors = [CPULoad(), ACStatus()]
+print(two_sensors[0].format("3.2"))
+
+</pre>
+<p>然后重新运行 mypy，我们看到的错误更基本:</p>
+<pre>broken.py:4: error: "object" has no attribute "format"
+
+</pre>
+<p>在这种情况下，mypy 似乎推断出了<code>two_sensors</code>列表的错误类型。我们可以将<code>reveal_type(two_sensors)</code>添加到定义好的源文件中，看看 mypy 发现了什么。请注意，<code>reveal_type</code>不是一个真正的函数。它不需要导入，因为它是 mypy 解析器的构造，而不是 Python 代码。如果您将它留在代码中，那么当代码运行时，它将导致错误。仅在运行 mypy 时将其添加为临时调试辅助工具。添加了<code>reveal_type(two_sensors)</code>后，我们会在 mypy 输出中看到以下附加行:</p>
+<pre>broken.py:4: error: Revealed type is 'builtins.list[builtins.object*]'
+
+</pre>
+<p>显示 mypy 已经将变量解释为对象列表，而不是传感器列表。如果我们从键入模块导入适当的名称，并向<code>two_sensors</code>行添加一个显式类型，比如</p>
+<pre>two_sensors: List[Sensor[Any]] = [CPULoad(), ACStatus()]
+
+</pre>
+<p>那么 mypy 的输出变成了</p>
+<pre>broken.py:6: error: Revealed type is 'builtins.list[sensors.Sensor[Any]]'
+
+</pre>
+<p class="Para" id="Par173">如前所述，<code>typing.Any</code>的使用是鱼龙混杂。这个定义意味着从这个列表中检索到的任何传感器都属于类型<code>Sensor[Any]</code>，因此<code>two_sensors[0].format("3.2")</code>将不再被 mypy 检测为错误。</p>
+<p>在当前的例子中，我们有两个传感器，一个返回一个浮点数，另一个返回一个<code>Optional[bool]</code>，所以我们可以将列表声明为</p>
+<pre>two_sensors: List[Union[Sensor[float], Sensor[Optional[bool]]]] = [CPULoad(), ACStatus()]
+
+</pre>
+<p>这意味着<code>two_sensors</code>将只包含那些类型的传感器，但这仍然不是特别有用。我们现在得到一对错误线:</p>
+<pre>broken.py:7: error: Argument 1 to "format" of "Sensor" has incompatible type "str"; expected "float"
+broken.py:7: error: Argument 1 to "format" of "Sensor" has incompatible type "str"; expected "Optional[bool]"
+
+</pre>
+<p>显示 mypy 确实已经确定调用不正确，但是基于信息，它无法知道<code>float</code>或<code>Optional[bool]</code>是否是正确的选择。我们可以通过返回的<code>reveal_type(two_sensors[0].format)</code>看到更多关于它所抱怨的格式方法的信息</p>
+<pre>broken.py:6: error: Revealed type is 'Union[def (value: builtins.float*) -&gt; builtins.str, def (value: Union[builtins.bool, None]) -&gt; builtins.str]'
+
+</pre>
+<p>也就是说，mypy 知道它是两个函数签名中的一个，一个接受称为 value 的 float，另一个接受称为 bool 或 None 的 value，两者都返回 str。根据输入提示，这两种情况都同样有效。我们无法让 mypy 检测到正确的函数，除非我们将类型声明为</p>
+<pre>two_sensors: Tuple[Sensor[float], Sensor[Optional[bool]]] = (CPULoad(), ACStatus())
+
+</pre>
+<p class="Para" id="Par178">这些都是荒谬的长度去。这说明了如果你过于教条地对待输入，你的代码会变得多么不可维护。在这种情况下，您可以选择接受较低级别的类型检查，或者完全重新构建您的程序，以通过避免混合类型的情况来允许更容易的类型检查。就个人而言，我会选择少检查。</p>
+
+<h3 class="Heading">何时使用打字，何时避免打字</h3>
+<p class="Para" id="Par179">一般来说，类型提示在 Python 中是一个非常可选的特性。有些人喜欢静态类型鼓励的更严谨的风格，但是如果这种风格对你来说不自然，那么我不建议仅仅因为它使工具更容易就进行转换。</p>
+<p class="Para" id="Par180">将类型检查作为一种帮助自己的方式，而不是检测所有可能错误的方式。你必须在你的编码中判断每一个正确输入的好处，权衡增加代码复杂性的坏处。通常有一个明确的中间地带，任何额外的输入都很难正确表示，任何更少的输入都不会显著简化代码。</p>
+<p class="Para" id="Par181">例如，在这个项目的后期，我们将需要绘制一些传感器的输出随时间变化的图表。返回 float 或 int 的传感器很容易绘制图表，因为它们是一个定量值。返回字符串列表或<code>sys.version_info</code>列表的传感器没有被转换成图表的自然方法。</p>
+<p class="Para" id="Par182">对于这些，我们可以想象编写使用一系列传感器的代码，这些传感器都使用数字类型(或者可选的数字类型)作为它们的输入。这将允许我们限制从 value 函数返回的预期类型，并确保该函数的其余部分是类型安全的，而无需我们确保在整个代码库中的所有变量中维护每个传感器的确切类型。</p>
+<p class="Para" id="Par183">更一般地说，并不是所有的项目都从静态类型中获益匪浅。如果一个项目有一组相对简单的返回已知类型的函数，这将是一个真正的好处。一旦你开始需要大量使用<code>Union</code>或定制的泛型类型，支持类型化的论点就变得越来越弱。</p>
+<p class="Para" id="Par184">在我看来，最重要的考虑是开发软件的人是否想使用静态类型。如果您和您的同事喜欢这种工作方式带来的严格性，那么使用静态类型可能是个好主意。如果你在代码审查和测试上花费了大量的时间和精力，那么增加测试的好处可能会少得多。</p>
+<p class="Para" id="Par185">如果您正在编写一个供他人使用的库，那么最好至少有外部接口类型提示，因为它允许您的用户使用类型提示，而不会将您的库标记为排除在类型检查过程之外。</p>
+<p class="Para" id="Par186">在本书中，我们将包含代码的类型提示。因为代码是由一个不反对类型提示的人编写的，所以没有特别的理由去避免它。好处是双重的。首先，如果在代码示例中发现一个小的 bug，书籍很难更新。使用类型提示使得第一次获得正确的代码更加容易。其次，如果你以前使用过这个特性，你会更容易凭直觉判断它是否会在你的项目中有用。当我们在章节中构建这个例子时，你可能会发现自己不同意我选择的类型提示。不要忽视这些想法，知道什么对你来说是自然的，是设计测试套件和静态检查器的成功的一半。</p>
+
+<h3 class="Heading">将类型提示与代码分开</h3>
+<p>在代码中使用类型提示的另一种方法是在 pyi 文件中与代码一起定义它们。这些行为就像。对于熟悉 C 编程的人来说。代码的结构保持不变，但是没有实现。如果从事软件工作的大多数开发人员不使用类型提示(例如，如果它们是为代码的外部消费者设计的)，或者如果您的类型结构非常复杂，以至于代码看起来很混乱，那么这可能是有益的。它的部分实现如清单<a href="#PC61"> 2-12 </a>所示。</p>
+<pre>#!/usr/bin/env python
+# coding: utf-8
+import math
+import socket
+import sys
+
+import click
+import psutil
+
+class Sensor:
+
+    def value(self):
+        raise NotImplementedError
+
+    @classmethod
+    def format(cls, value):
+        raise NotImplementedError
+
+    def __str__(self):
+        return self.format(self.value())
+
+class PythonVersion(Sensor):
+    title = "Python Version"
+
+    def value(self):
+        return sys.version_info
+
+    @classmethod
+    def format(cls, value):
+        if value.micro == 0 and value.releaselevel == "alpha":
+            return "{0.major}.{0.minor}.{0.micro}a{0.serial}".format(value)
+        return "{0.major}.{0.minor}".format(value)
+
+Listing 2-12Partial sensors.py file without inline type definitions
+
+
+</pre>
+<p><em class="EmphasisTypeItalic ">为前面的部分文件</em>匹配 sensors.pyi</p>
+<pre>from typing import Any, Iterable, List, Optional, Tuple, TypeVar, Generic
+
+T_value = TypeVar('T_value')
+
+class Sensor(Generic[T_value]):
+    title: str
+    def value(self) -&gt; T_value: ...
+    @classmethod
+    def format(cls: Any, value: T_value) -&gt; str: ...
+
+class PythonVersion(Sensor[Any]):
+    title: str = ...
+    def value(self) -&gt; Any: ...
+    @classmethod
+    def format(cls: Any, value: Any) -&gt; str: ...
+
+</pre>
+<p>这些存根文件可以由 mypy 从标准 Python 文件中生成。这些生成的文件在使用之前必须进行编辑，因为它们不包含除<code>typing.Any</code>之外的任何类型声明。这些文件是使用 stubgen 工具生成的，如下所示:</p>
+<pre>&gt; pipenv run stubgen sensors.py
+&gt; cp out/sensors.pyi ./sensors.pyi
+
+</pre>
+<p>在我看来，除非有充分的理由，否则应该避免使用这种格式。这更难维护，因为新的函数需要添加到<code>pyi</code>文件和<code>py</code>文件中，并且在某些情况下使用类型注释会稍微困难一些。比如在组合语法中，<code>Sensor[float]</code>是有效的 Python，但是在这种拆分形式中，<code>Sensor</code>基类没有从<code>Generic</code>继承的<code>__getitem__</code>方法，所以<code>Sensor[float]</code>只在 pyi 文件中有效，在 py 文件中无效。如果我们想在<code>py</code>文件中使用<code>Sensor[float]</code>，而不仅仅是在<code>pyi</code>文件中，我们必须使用遗留注释语法来定义类型:</p>
+<pre>sensor = [CPULoad(), ]  # type: List[Sensor[float]]
+
+</pre>
+Exercise 2-3: Expanding The Typing Coverage
+<p class="Para FirstParaInFormalPara" id="Par191">我们已经有了一个传感器的基类，并研究了如何将它应用到一个传感器上。</p>
+<p class="Para" id="Par192">浏览 sensors.py 文件中的其余传感器，并更新它们以使用带有适当类型提示的传感器基类。</p>
+<p class="Para" id="Par193">您可能希望尝试对 mypy 使用- strict 命令行标志，以查看默认情况下不会引发的其他警告，例如，因为我们忽略了外部模块。</p>
+<p class="Para" id="Par194">您必须做出一些选择，特别是关于如何处理来自<code>psutil</code>的非类型化变量和一个难以类型化的特定传感器。</p>
+
+
+
+<h2 class="Heading">林挺</h2>
+<p class="Para" id="Par195">林挺是许多不同类型的代码静态分析的通称。在某种程度上，mypy 在上一节中所做的静态分析是一种非常技术性的、计算机科学驱动的林挺。与类型检查相比，我们将在本节中讨论的林挺涉及的内容要少得多，并且更容易引入到现有的项目中。</p>
+<p class="Para" id="Par196">我选择的 linter 是 flake8，这是对 Python 增强建议(PEP8)的参考，它定义了 Python 代码的风格指南。<sup> <a epub:type="noteref" href="#Fn14" id="Fn14_source" role="doc-noteref"> 14 </a> </sup> Flake8 和其他 linters 比这个风格指南走得更远，以产生符合最佳实践和一些备受尊敬的 Python 开发人员的意见的代码。您可能会发现不同的 linter 与您选择的代码编辑器集成得特别好，在这种情况下，我会推荐使用那个。</p>
+<p class="Para" id="Par198">您会不可避免地发现，一些 linters 执行您认为不重要的检查，或者可能会遗漏一些您认为应该在代码中强制执行的检查。由于这个原因，flake8 是非常可定制的，允许一个软件的作者定义如何检查它的代码。作为一个软件的作者或维护者，您可以随意设置这些值，这样您就可以从 linter 中获得最大的好处。如果您发现自己为他人维护的代码做贡献，那么他们对 flake8 配置的选择可以帮助您在提交补丁之前就知道您是否编写了一些他们可能不喜欢的代码。不得不调整代码来传递过分热心的 linter 可能会令人沮丧，但这比不得不在 pull 请求上一个接一个地检查注释要令人沮丧得多，因为维护人员会注意到它们。</p>
+<p class="Para" id="Par199">由于 linters 的许多抱怨都是基于格式的，因此有一种趋势是 linters 自己解决格式的一致性问题。Python 社区这个领域的暴走领袖是黑人。<sup> <a epub:type="noteref" href="#Fn15" id="Fn15_source" role="doc-noteref"> 15 </a> </sup> Black 自动以一致的方式重新格式化您的代码。使用黑色棉绒比使用其他棉绒有许多优点。最主要的一点是，从情感上来说，接受对代码格式没有控制权比处理大量看似无关紧要的变更要容易得多。使用黑色的一个很大的优势是不用去安抚空白的短绒。</p>
+Caution
+<p class="Para FirstParaInFormalPara" id="Par201">如果你正在为一个不使用 black 的代码库做贡献，确保你只贡献你想要的改变。git 命令<code>git add --patch</code>是一个很好的工具，可以准确地选择提交哪些变更。如果您提交了一个项目，该项目重新格式化了与您的更改无关的代码，那么提交很可能会被恢复，人们会感到不安。</p>
+
+<h3 class="Heading">安装 flake8 和黑色</h3>
+<p>我们将安装并设置 flake8 和 black 来运行我们的代码。这两者都是开发依赖项，而不是核心依赖项，因此安装时带有<code>--dev</code>标志。<sup> <a epub:type="noteref" href="#Fn16" id="Fn16_source" role="doc-noteref"> 16 </a> </sup></p><pre>&gt; pipenv install --dev flake8 black
+
+</pre>
+
+
+<h3 class="Heading">修复现有代码</h3>
+<p>然后，我们可以对我们的代码(或测试)运行 flake8</p>
+<pre>&gt; pipenv run flake8 sensors.py
+&gt; pipenv run flake8 tests
+
+</pre>
+<p>如果您运行其中任何一个，您将看到几个必需的更改。其中许多是空格的改变，但其他的是与代码格式有关的。我们不想手动进行所有这些更改，所以让我们使用 black 来重新格式化我们的代码。<sup> <a epub:type="noteref" href="#Fn17" id="Fn17_source" role="doc-noteref"> 17 </a> </sup></p><pre>&gt; pipenv run black sensors.py tests
+
+</pre>
+
+<p>现在这些文件已经被重新格式化，我们希望 flake8 只报告不是由格式化引起的错误。然而，我们还需要做几件事情。首先，black 的默认行长度是 88 个字符，但是 flake8 的是 80 个字符。我们需要更新薄片配置，以使用与黑色相同的值。这是通过在现有的 mypy 配置旁边向<code>setup.cfg</code>添加一个<code>[flake8]</code>部分来实现的。</p>
+<pre>[mypy]
+ignore_missing_imports = True
+
+[flake8]
+max-line-length = 88
+
+</pre>
+<p>当我们运行<code>pipenv run flake8 sensors.py</code>时，我们仍然会看到一些错误。这是因为我们有过长的注释，并且注释是为人类而不是 Python 解释器准备的，black 没有为我们拆分它们。使 sensors.py 通过 flake8 测试所需的更改是最小的，但是当我们运行测试时，我们看到了几个需要修复的真正错误。<sup> <a epub:type="noteref" href="#Fn18" id="Fn18_source" role="doc-noteref"> 18 </a> </sup></p><pre>&gt; pipenv run flake8 tests
+tests\test_acstatus.py:2:1: F401 'socket' imported but unused
+tests\test_acstatus.py:41:26: E712 comparison to True should be 'if cond is True:' or 'if cond:'
+tests\test_acstatus.py:46:26: E711 comparison to None should be 'if cond is None:'
+tests\test_acstatus.py:51:26: E711 comparison to None should be 'if cond is None:'
+tests\test_cpuusage.py:2:1: F401 'socket' imported but unused
+tests\test_dht.py:2:1: F401 'socket' imported but unused
+tests\test_dht.py:57:13: F841 local variable 'f' is assigned to but never used
+tests\test_ramusage.py:2:1: F401 'socket' imported but unused
+tests\test_sensors.py:1:1: F401 'sys' imported but unused
+
+</pre>
+
+<p class="Para" id="Par211">在这个输出中，我们得到了文件名，后面是行号，再后面是该行中的列号(如果不适用，则为 1)。最后，我们给出了样式错误的 flake8 代码和一个易读的解释。通过将检查添加到<code>setup.cfg</code>中的<code>ignore=</code>行，代码号用于排除正在运行的检查。</p>
+<p class="Para" id="Par212">这些抱怨中的每一个都很清楚；一行一行地检查并做出建议的更改是一项相对机械的任务。我建议从错误列表的底部开始，向上努力。如果从顶部开始，一路向下，那么行号可能不正确，因为删除了不需要的导入行来修复<code>F401</code>错误。</p>
+
+<h3 class="Heading">自动运行</h3>
+<p class="Para" id="Par213">手动运行 linters 当然是可能的，但是我们现在有四种不同的检查要记住运行，以确保代码是可接受的。很容易错过其中的一个，并意外地犯下不符合标准的事情。一旦它被提交，修复就变得更加困难；要么需要编辑提交以包括修复，要么需要仅包含那些修复的新提交。在使用 linters 的项目中，看到类似“PEP8”、“Fixes”或“Flake8”这样的提交消息是很常见的，但是并没有一致地使用它们。</p>
+<p class="Para" id="Par214">使用 linter 的一个主要原因是第一次就把事情做好，所以为了获得最大的好处，它应该在每次提交时运行，而不仅仅是每次推送或者当作者喜欢时运行。如果代码库接受外部贡献或来自不止一个开发人员的工作，就好像有些开发人员没有运行 linter 一样，那么这一点就特别重要，因为它所发现的错误不能保证与您正在进行的更改有关。</p>
+<p>因此，我在本章推荐的最后一个工具叫做预提交。这是一个管理 Git 提供的钩子的工具，用于确定是否应该允许提交。它是用 Python 编写的，所以可以很容易地用和我们所有其他开发工具一样的方法安装。</p>
+<pre>&gt; pipenv install --dev pre-commit
+
+</pre>
+<p class="Para" id="Par216">我们需要配置预提交，通过将它们输入到<code>.pre-commit-config.yaml</code>配置文件中来了解我们想要运行的三件事。预提交广泛支持通过 GitHub 使用社区编写的配置，这是官方推荐的配置钩子的方式。然而，我发现对许多人来说，直接在存储库中编写一个手动挂钩更快，如清单<a href="#PC72"> 2-13 </a>所示。如果您愿意，有许多外部维护的钩子可供选择，但是这种显式的方法通常就足够了。</p>
+<p>
+ 
+</p>
+<pre>repos:
+
+- repo: local
+  hooks:
+  - id: black
+    name: black
+    entry: pipenv run black
+    args: [--quiet]
+    language: system
+    types: [python]
+
+  - id: mypy
+    name: mypy
+    entry: pipenv run mypy
+    args: ["--follow-imports=skip"]
+    language: system
+    types: [python]
+
+  - id: flake8
+    name: flake8
+    entry: pipenv run flake8
+    language: system
+    types: [python]
+
+Listing 2-13.pre-commit-config.yaml
+
+
+</pre>
+<p class="Para" id="Par218">我们没有将 pytest 作为该套件的一部分自动运行，因为我们预计 pytest 会随着项目的进展而变慢。随着代码库的增长，静态分析工具不应该变得太慢，但是测试可能会做得很好。</p>
+<p>一旦该文件就位，就配置了预提交。每个用户都需要在签出时启用预提交，这是通过</p>
+<pre>&gt; pipenv run pre-commit install
+
+</pre>
+<p class="Para" id="Par220">从这一点开始，所有的提交都由这三个检查器保护。可以跳过检查(例如，如果进行一个快速的正在进行的工作提交，并且您打算在以后进行更改)。跳过检查是通过 git commit 调用中的<code>--no-verify</code>参数或者通过将<code>SKIP</code>环境变量设置为要跳过的检查器的名称来完成的。<sup> <a epub:type="noteref" href="#Fn19" id="Fn19_source" role="doc-noteref"> 19 </a> </sup></p>
+Tip
+<p class="Para FirstParaInFormalPara" id="Par222">我经常使用<code>git add --patch</code>来交互地放置我作品的“大块头”<sup> <a epub:type="noteref" href="#Fn20" id="Fn20_source" role="doc-noteref"> 20 </a> </sup>，而不是一次添加整个文件。如果您也这样工作，您可能会对 linters 和 formatters 有所顾虑，因为当您提交时，可能已经为您打算提交的下一个提交准备好了代码。</p>
+<p class="Para" id="Par224">预提交程序很好地处理了这个问题。任何未暂存的更改都将存储在由预提交管理的独立存储中(它不会干扰您现有的存储)，因此验证器和重新格式化器只对您已暂存的代码起作用。在我看来，这就是预提交的“杀手锏”特性。</p>
+
+
+<h3 class="Heading">根据拉取请求运行</h3>
+<p class="Para" id="Par225">像 GitHub 和 GitLab 这样的版本控制软件的现代前端支持持续集成挂钩。这些允许外部服务对您的提交、分支和拉请求运行验证，并在用户界面中用结果对它们进行注释。许多不同的产品都提供这种功能，所有产品都有不同的功能集和定价结构。</p>
+<p class="Para" id="Par226">Github 提供了一个简单的基于 docker 的 CI 运行程序，以及许多商业产品。GitLab 方法反映了 GitLab 本身，因为它们都是开源的，可以根据您的要求进行配置。这里有许多不同的方法，我不可能给出一个对每个人都有用的建议，所以本节只讨论一般的方法。我个人一般用 Github 的动作。</p>
+<p class="Para" id="Par227">持续集成软件提供的信息有两个目标用户。显而易见的是包的维护者。如果您有一些其他人可以访问的代码，无论是公开的补丁还是仅仅来自您的同事，您都会想知道建议的补丁中是否有任何明显的错误。维护一个软件可能是非常辛苦的工作；如果您必须检查一个分支，并在您的本地计算机上构建它，然后发现提交的内容有一个打字错误，这使它无法工作，那么它会变得更加困难。持续集成通过执行您通常会做的常见检查来减少您的工作量，并让您专注于审查代码。</p>
+<p class="Para" id="Par228">信息的不太明显的用户是变更的作者。每当你第一次为某个软件做贡献的时候，确保你没有犯一个小错误是很伤脑筋的。没有人喜欢犯错，尤其是在公共场合或在你的同伴面前。持续集成有助于在没有其他人积极参与的情况下，警告您是否出现了问题。当你提交一个拉取请求时，你可以看着一个个检查通过，并确保你的贡献不会因为一个简单的错误而被视为浪费某人的时间。</p>
+<p class="Para" id="Par229">这对于拥有非常慢的测试套件或依赖于特定操作系统或依赖版本的测试套件的项目尤其有用。可以设置持续集成来在 Linux、Windows 和 macOS 上运行您的软件。Django 测试套件可以在每一个支持的数据库架构上运行，包括 Oracle 这样的非免费数据库。要求所有提交补丁的人针对所有这些不同的配置运行测试是不可行的，所以 CI 服务器会处理它。</p>
+
+
+<h2 class="Heading">摘要</h2>
+<p class="Para" id="Par230">在这一章中，我们已经将我们的工作示例从一些基本函数扩展到了实现这些功能的类，使得构建即将到来的特性变得更加容易。我们已经实现了自动化测试，因此我们可以确信我们所做的更改不会破坏整个过程，以及类型检查和林挺来捕捉潜在的基本错误。</p>
+<p class="Para" id="Par231">我们已经看了三大类软件(测试、类型检查和林挺),它们帮助作为软件工程师的你写出你有信心的代码。您可能经常看到有人提倡这三种方法，以及应该应用于它们的使用的特定哲学，例如 100%测试覆盖率。这些方法的价值在于它节省了你和为你的软件做出贡献的人的时间，这应该是你判断如何使用它们的标准。</p>
+<p class="Para" id="Par232">一般来说，最努力的方法会有最大的回报。因此，测试您的代码具有最高的潜在回报，并且被广泛认为是一个好主意。测试驱动开发和在主要开发之后编写测试的相对优势，以及 100%测试覆盖率的相对优势，以及不同类型测试的好处就不那么显著了。对于任何比玩具项目更复杂的事情，我强烈建议至少编写一些测试。它们不一定是很棒的测试，但是随着时间的推移，某种程度的测试通常会对你有所帮助。</p>
+<p class="Para" id="Par233">静态类型检查有很大的好处，尤其是在编写大型复杂代码时。它还需要一些关于如何处理过程的决策，并且有一个重要的学习曲线。不精通测试的开发人员不会每次都面对测试套件的细节；静态类型就不是这样了。在整个代码库中都有键入工作的证据，编写一个新函数需要考虑静态类型。出于这个原因，如果你有充分的理由，我建议只使用静态类型。在我看来，最好的原因是开发团队认为它是有帮助的。其他因素，比如对高代码复杂性的预期，或者未来用户可能希望对他们的代码使用类型检查，也很有说服力。</p>
+<p class="Para" id="Par234">最后，林挺很容易实现，但好处相对较少。这当然会节省你一些时间(也许还会节省一些时间)，但它只会发现相对较浅的错误和风格上的改进。这值得去做，但不值得为此而紧张。我强烈建议所有 Python 项目使用某种 linter，并且我鼓励任何多人参与的项目使用代码格式化程序。也就是说，如果你觉得某些警告没有帮助，不要害怕忽视它们。</p>
+<p class="Para" id="Par236">在下一章中，我们将以可安装的方式打包这个软件，并提供一种通过插件架构将额外的传感器添加到可用集合的方式。</p>
+<h3 class="Heading">额外资源</h3>
+<p>以下资源提供了本章所涵盖主题的附加信息:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par238">typeshed 库包含标准库和许多第三方库的类型提示。它和它的文档是寻找复杂类型做得好的例子的好地方。它的 Git 库可以在<a href="https://github.com/python/typeshed"> <code>https://github.com/python/typeshed</code> </a>找到。</p></li>
+<li><p class="Para" id="Par239">预提交的文档中有很多关于各种工具的高级特性和预先编写的钩子的信息。详见<a href="https://pre-commit.com/"> <code>https://pre-commit.com/</code> </a>。</p></li>
+<li><p class="Para" id="Par240">PEP561 定义了如何分发类型提示，尤其是作为只为现有包提供提示的包。我们将在下一章中讨论包，但是<a href="http://www.python.org/dev/peps/pep-0561/%2523stub-only-packages"> <code>www.python.org/dev/peps/pep-0561/#stub-only-packages</code> </a>提供了这方面的信息，这可能对考虑向现有代码库添加存根是否可行的开发人员有用。</p></li>
+<li><p class="Para" id="Par241">在<a href="https://flake8.pycqa.org/en/latest/user/error-codes.html"> <code>https://flake8.pycqa.org/en/latest/user/error-codes.html</code> </a>有一个 flake8 使用的错误代码列表，除了在<a href="https://pycodestyle.readthedocs.io/en/latest/intro.html%2523error-codes"> <code>https://pycodestyle.readthedocs.io/en/latest/intro.html#error-codes</code> </a>有 pycodestyle 列表之外，还有一个错误代码列表。</p></li>
+</ul>
+
+
+
+<aside aria-label="Footnotes" class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par3">源自一句话“如果它走路像鸭子，叫起来像鸭子，那么它很可能就是一只鸭子。”在这个上下文中，这意味着 Python 不检查变量的类型是否与现有的声明匹配；相反，只要执行代码所需的所有方法和属性都存在，它将代替任何其他对象接受任何对象。</p>
+
+ 
+
+<a href="#Fn2_source">2</a><p class="Para" id="Par6">严格来说就是<code>some_int.__add__(other_int)</code>和<code>int.__add__(some_int, other_int)</code>的区别。Python 会自动将<code>x + y</code>转换为<code>x.__add__(y)</code>，但我不想暗示这是一种合适的整数相加方式。</p>
+
+ 
+
+<a href="#Fn3_source">3</a><p class="Para" id="Par8">早期绑定要求在编写程序时就知道将要使用的确切函数。</p>
+
+ 
+
+<a href="#Fn4_source">4</a><p>这个<code>fractions.Fraction(...)</code>类用得不多，这真是一个遗憾。它允许在不损失精度的情况下操作分数。浮点数的精度对于大多数计算来说已经足够了，但是如果您的值代表有意义的分数，那么它们可能是有用的。想象你把一块蛋糕切成四份，然后吃掉三分之二。以下哪一项更清楚你吃了多少？</p>
+<pre>&gt;&gt;&gt; from fractions import Fraction
+&gt;&gt;&gt; 1/4 * 2/3
+0.16666666666666666
+&gt;&gt;&gt; Fraction(“1/4”) * Fraction(“2/3”)
+Fraction(1, 6)
+
+</pre>
+
+ 
+
+<a href="#Fn5_source">5</a><p class="Para" id="Par35">技术上，<em class="EmphasisTypeItalic "> mebibytes </em> : 1024 × 1024 字节而不是 1000 × 1000 字节。虽然术语兆字节(和相应的缩写 MB)经常用于这两种定义，但兆字节(缩写 MiB)专门指较大的二进制定义。</p>
+
+ 
+
+<a href="#Fn6_source">6</a><p class="Para" id="Par37">定义在对象上而不是全局范围内的函数传统上称为方法。</p>
+
+ 
+
+<a href="#Fn7_source">7</a><p class="Para" id="Par43">或者<code>klass</code>。<code>class</code>是保留字，因此不能用于变量名。<code>cls</code>和<code>self</code>参数名称都只是约定，但是我强烈建议您遵循它们。</p>
+
+ 
+
+<a href="#Fn8_source">8</a><p class="Para" id="Par46">在时间或者记忆方面是昂贵的。虽然有些 API 会导致真正的金钱支出，但我建议不要编写仅仅通过实例化一个类就隐含地发生这种情况的代码。</p>
+
+ 
+
+<a href="#Fn9_source">9</a><p class="Para" id="Par48">当对象被转换成面向用户的字符串时，使用<code>__str__()</code>。当一个对象被打印或用于字符串操作方法如<code>”{}”.format(obj)</code>时，就会发生这种情况。<code>__repr__()</code>由 Python 内部使用，用于面向程序员的字符串表示，例如在回溯中，以及在 REPL 提示符下键入其名称。你可以通过使用内置的<code>str(obj)</code>和<code>repr(obj)</code>函数来明确选择你想看的。</p>
+
+ 
+
+<a href="#Fn10_source">10</a><p class="Para" id="Par70">这被称为“纯函数”:它的输出只由它的输入决定。行为不一致的函数，像<code>random.random()</code>，不是纯函数，更难测试。</p>
+
+ 
+
+<a href="#Fn11_source">11</a><p class="Para" id="Par83">这是个人风格问题。你可能会发现给设备起一个更清晰的名字，让它的功能更清晰。</p>
+
+ 
+
+<a href="#Fn12_source">12</a><p class="Para" id="Par91">方法的表示称为“绑定方法”，这意味着它是一个附加到实例的方法。</p>
+
+ 
+
+<a href="#Fn13_source">13</a><p class="Para" id="Par109">对于那些黑白阅读这篇文章的人来说，红线在绿线下面。</p>
+
+ 
+
+<a href="#Fn14_source">14</a><p class="Para" id="Par197">从技术上讲，flake8 这个名字实际上是基于 pyflakes 和 pep8 库，这两个库都是静态分析工具。pep8 库以 PEP8 命名，因为它试图检查 PEP8 的符合性。</p>
+
+ 
+
+<a href="#Fn15_source">15</a><p class="Para" id="Par200">黑色的配置选项很少；它做它认为最好的事。它的名字参考了亨利·福特的名言:“任何顾客都可以把车漆成他想要的任何颜色，只要是黑色的。”</p>
+
+ 
+
+<a href="#Fn16_source">16</a><p class="Para" id="Par203">在撰写本文时，black 的作者已经承诺在过去的 18 个月中立即取消 black 的预发布标志。如果在您阅读本文时这还没有完成，您可能需要给 pipenv 添加<code>--pre</code>标志来允许它被安装。尽管它声称还没有准备好生产，但我认为它已经准备好了。</p>
+
+ 
+
+<a href="#Fn17_source">17</a><p>当转换项目以使用 black 时，您应该在一次 git 提交中将 black 添加到环境中，并在第二次提交中进行所有的自动更改。如果稍后发生合并冲突，则更容易放弃第二次提交并重新运行 black。包含重新格式化代码的提交应该按如下方式完成</p>
+<pre>git commit -m “Apply initial black formatting” --author=”Black Formatter &lt;black@example.com&gt;”
+
+</pre>
+<p class="Para" id="Par207">以确保这是一个自动重新格式化的事实在将来对开发者是清楚的。如果您不指定作者，那么您将永远被认为是最后一个接触代码库各个部分的人。</p>
+
+ 
+
+<a href="#Fn18_source">18</a><p class="Para" id="Par210">其中一些我一直假装没有注意到，所以在这个部分会有一些东西可以找到，其他的我没有注意到。重构代码时很容易遗漏一些东西，即使你很专心。</p>
+
+ 
+
+<a href="#Fn19_source">19</a><p class="Para" id="Par221">对于除了 Windows cmd.exe 之外的大多数 shells，这可以作为<code>SKIP=”mypy” git commit</code>来完成。</p>
+
+ 
+
+<a href="#Fn20_source">20</a><p class="Para" id="Par223">我不知道 GNU diff 的作者为什么选择将一组更改的行称为 hunk，但它已经成为标准术语。</p>
+
+ 
+
+<a href="#Fn21_source">21</a><p class="Para" id="Par235">“自行车脱落”关注的是设计的一个微不足道的方面，而不是重要的部分。这个名字是指这样一种想法，即当面对一个核电站的详细计划时，人们更有可能对一些琐碎但普遍的东西进行评论，比如自行车棚的颜色，而不是复杂的东西，比如电厂的设计。</p>
+
+ 
+
+</aside>
+
+
+</body>
+</html>

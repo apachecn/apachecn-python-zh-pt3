@@ -1,0 +1,236 @@
+<html lang="en">
+<head><title>Applications with asyncio and Twisted</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">9.带有异步和扭曲的应用程序</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">从版本 3.4 开始，Python 实现中包含的<code>asyncio</code>包为异步、事件驱动的网络程序标准化了一套 API。除了提供自己的并发和网络原语之外，<code>asyncio</code>还指定了一个事件循环接口，为异步库和框架提供了一个公共标准。这个共享的衬底允许应用程序在同一个进程中同时使用 Twisted 和<code>asyncio</code>。</p>
+<p class="Para" id="Par3">在这一章中，我们将学习如何通过用<code>treq</code>编写一个简单的 HTTP 代理来用<code>asyncio</code>编写 Twisted 的 API，这是一个构建在 Twisted 之上的高级 HTTP 客户端；还有<code>aiohttp</code>，一个构建在<code>asyncio</code>之上的 HTTP 客户端和服务器库。</p>
+<p class="Para" id="Par4">它的生态系统仍在进化。随着越来越多的人在更多的情况下使用<code>asyncio</code>，新的 API 被开发出来，习惯用法也被采用。因此，我们的 HTTP 代理是一个案例研究，而不是集成 Twisted 和<code>asyncio</code>的方法。我们将从介绍基本的和稳定的概念开始，这些概念支持两者之间的交叉兼容性，为将来集成<code>asyncio</code>及其库和 Twisted 铺平了道路。</p>
+<h2 class="Heading">核心概念</h2>
+<p class="Para" id="Par5"><code>asyncio</code>和 Twisted 共享许多设计和实现细节，部分原因是 Twisted 的社区参与了<code>asyncio</code>的开发。描述<code>asyncio</code>的《人教版 3156》取材于《人教版 3153》，后者又是 Twisted 开发团队的一名成员写的。因此，<code>asyncio</code>借用了 Twisted 的协议、传输、生产者和消费者，为 Twisted 程序员提供了一个熟悉的环境。</p>
+<p class="Para" id="Par6">然而，这种共同的祖先在很大程度上与集成使用的库和使用 Twisted 的库的过程无关。相反，任何事件驱动框架所必需的两个概念形成了它们相遇的接口:<em class="EmphasisTypeItalic ">承诺</em>在值可用之前表示它们，以及<em class="EmphasisTypeItalic ">事件循环</em>调度 I/O</p>
+
+<h2 class="Heading">承诺</h2>
+<p class="Para" id="Par7">到目前为止，您已经熟悉了 Twisted 的<code>Deferred</code> s，它允许开发人员在业务逻辑和错误处理可用之前将它们与值关联起来。在计算机科学文献和其他社区中，<code>Deferred</code> s 通常被称为<em class="EmphasisTypeItalic ">承诺</em>。正如第二章<a href="02.html">所解释的，承诺通过外部化回调的组成而无需宿主语言的特殊支持，从而简化了事件驱动程序的开发。</a></p>
+<p><code>asyncio</code>的基础 promise 实现是它的<code>asyncio.Future</code>类。不像<code>Deferred</code> s，<code>Future</code> s 做<em class="EmphasisTypeItalic ">而不是</em>同步运行它们的回调；相反，<code>Future.add_done_callback</code>计划在事件循环的下一次迭代中运行回调。在 Python 3.4 或更高版本上运行时，比较以下示例中的<code>Deferred</code> s 和<code>Future</code> s 的行为:</p>
+<pre>&gt;&gt;&gt; from twisted.defer import Deferred
+&gt;&gt;&gt; d = Deferred()
+&gt;&gt;&gt; d.addCallback(print)
+&lt;Deferred at 0x1234567890&gt;
+&gt;&gt;&gt; d.callback("value")
+&gt;&gt;&gt; value
+&gt;&gt;&gt; from asyncio import Future
+&gt;&gt;&gt; f.add_done_callback(print)
+&gt;&gt;&gt; f.set_result("value")
+&gt;&gt;&gt;
+
+</pre>
+<p class="Para" id="Par9"><code>Deferred.addCallback</code>和<code>Future.add_done_callback</code>都安排一个函数在相应的承诺抽象表示的值可用时运行。然而，<code>Deferred.callback</code>会立即运行所有相关的回调，而<code>Future.set_result makes</code>直到一个事件循环开始下一次迭代才会有进展。</p>
+<p class="Para" id="Par10">一方面，这消除了存在于<code>Deferred</code>中的重入错误的可能性，因为所有的<code>asyncio</code>代码都可以假设添加回调不会导致它立即运行，即使<code>Future</code>已经有一个值。另一方面，所有的<code>asyncio</code>代码都必须通过事件循环来运行，这使得它的使用和设计都变得复杂。例如:上面我们命名为<code>f</code>的<code>Future</code>用什么事件循环来调度它的<code>print</code>回调？我们得看看<code>asyncio</code>的事件循环系统，以及它与 Twisted 的 reactor 有何不同才能回答这个问题。</p>
+<h3 class="Heading">事件循环</h3>
+<p class="Para" id="Par11">如第<a href="01.html"> 1 </a>章所述，Twisted 将其事件循环称为<em class="EmphasisTypeItalic ">反应器</em>。在第<a href="03.html"> 3 </a>章中，我们使用<code>twisted.internet.task.react</code>和 Twisted 应用程序框架来管理 feed aggregation 应用程序的反应器的创建和供应。这两种获得反应器的方法都比在应用程序代码中将其作为<code>twisted.internet.reactor</code>导入要好。这是因为反应堆的选择取决于它的使用环境；不同的平台提供了自己的 I/O 复用原语，所以运行在 macOS 上的 Twisted 应用应该使用<code>kqueue</code>，而运行在 Linux 上的应该使用<code>epoll</code>；测试可能更喜欢存根反应器实现，以最小化对共享操作资源的影响；而且，正如我们将看到的，应用程序可能希望通过在另一个事件循环上运行 Twisted 来将其与其他框架结合起来。导入反应器而不是接受它作为 callables 的参数的代码本身不能在反应器选择之前导入，这大大增加了它的使用复杂性。出于这个原因，Twisted 引入了像<code>react</code>这样的 API 来促进反应器上应用程序的参数化。</p>
+<p class="Para" id="Par12">虽然 Twisted 必须开发新的 API 来管理反应器的选择和安装，但从一开始<code>asyncio</code>就包含了服务于此目的的<em class="EmphasisTypeItalic ">事件循环策略</em>。<code>asyncio</code>包含一个默认策略，开发者可以用<code>asyncio.set_event_loop_policy</code>替换它，用<code>asyncio.get_event_loop_policy</code>检索它。</p>
+<p class="Para" id="Par13">默认策略将事件循环绑定到线程；<code>asyncio.get_event_loop</code>返回当前线程的循环，必要时创建它，而<code>asyncio.set_event_loop</code>设置它。</p>
+<p class="Para" id="Par14">这就是我们的示例<code>Future</code>如何将自己与事件循环相关联。<code>asyncio.Future</code>初始化器通过只有关键字的<code>loop</code>参数接受一个事件循环；如果保持<code>None</code>，<code>Future</code>用<code>asyncio.get_event_loop</code>检索默认策略的当前循环。</p>
+<p class="Para" id="Par15">从历史上看，<code>asyncio</code>期望它的用户在需要的地方显式地传递当前事件循环，结果是当函数在模块级别以下的任何地方被调用时，<code>get_event_loop</code>中的一个 bug 导致了意外的行为。然而，从 Python 3.5.3 开始，<code>get_event_loop</code>被设计成在回调中运行时可靠地返回运行事件循环。最近的<code>asyncio</code>代码支持<code>get_event_loop</code>，而不是通过调用堆栈传递或设置为实例变量的显式引用。</p>
+<p class="Para" id="Par16">除了它们的普遍性之外，<code>asyncio</code>的事件循环在功能上也不同于 Twisted 的反应堆。例如，反应堆可以在其生命周期的特定时间点运行<em class="EmphasisTypeItalic ">系统事件触发器</em>。Twisted 经常管理资源，这些资源必须在任何应用程序代码运行之前分配，并在进程使用<code>IReactorCore.addSystemEventTrigger</code>关闭之前显式释放；例如，Twisted 的默认 DNS 解析器使用的线程池的生命周期通过一个<code>shutdown</code>事件触发器与反应器的生命周期联系在一起。在撰写本文时，<code>asyncio</code>的事件循环还没有对等的 API。</p>
+
+
+<h2 class="Heading">指导方针</h2>
+<p>由于<code>asyncio.Future</code> s 和 Twisted 的<code>Deferred</code> s 之间的差异以及两个库的事件循环之间的差异，在结合两者时，有必要遵循特定的指导原则。</p>
+<ol><li class="ListItem"><p class="Para" id="Par18">总是在<code>asyncio</code>事件循环之上运行 Twisted reactor。</p>
+ </li>
+<li class="ListItem"><p class="Para" id="Par19">从 Twisted 调用<code>asyncio</code>代码时，用<code>Deferred.fromFuture</code>将<code>Future</code> s 转换为<code>Deferred</code> s。用<code>asyncio.Task</code>包装协程并将它们转换成<code>Deferred</code>像<code>Future</code>一样</p>
+ </li>
+<li class="ListItem"><p class="Para" id="Par20">从<code>asyncio</code>调用 Twisted 时，用<code>Deferred.asFuture</code>将<code>Deferred</code> s 转换为<code>Future</code> s。将活动的<code>asyncio</code>事件循环作为该方法的参数传递。</p>
+ </li>
+</ol>
+
+<p class="Para" id="Par21">第一条指导原则来自于这样一个事实，即<code>IReactorCore</code>的 API 大于<code>asyncio</code>的事件循环。然而，第二个和第三个需要熟悉<code>asyncio</code>的协同程序、<code>Future</code>和<code>Task</code>以及它们之间的区别。</p>
+<p class="Para" id="Par22">我们在上面看到<code>Future</code> s 的功能等同于<code>Deferred</code> s。我们还在第<a href="02.html"> 2 </a>章中了解到<em class="EmphasisTypeItalic ">协程</em>——用<code>async def</code>定义的函数和方法——是一个<em class="EmphasisTypeItalic ">语言特性</em>；它们没有隐式地绑定到<code>asyncio</code>或 Twisted 或任何其他库。回想一下，协程可以<code>await</code>一个<em class="EmphasisTypeItalic ">类似未来的对象</em>，而<code>Deferred</code>是类似未来的对象，所以协程可以<code>await</code>一个<code>Deferred</code>。</p>
+<p>不出所料，<code>asyncio.Futures</code>也是类似未来的对象，所以协程也可以<code>await</code>它们。惯用的<code>asyncio</code>代码很少显式地创建<code>Futures</code>到<code>await</code>，然而，更喜欢直接<code>await</code>其他协程。考虑以下示例:</p>
+<pre>&gt;&gt;&gt; import asyncio
+&gt;&gt;&gt; from twisted.internet import defer, task, reactor
+&gt;&gt;&gt; aiosleep=asyncio.sleep(1.0, loop=asyncio.get_event_loop())
+&gt;&gt;&gt; txsleep=task.deferLater(reactor,1.0, lambda:None)
+&gt;&gt;&gt; asyncio.iscoroutine(aiosleep)
+True
+&gt;&gt;&gt; isinstance(txsleep, defer.Deferred)
+True
+
+</pre>
+<p class="Para" id="Par24"><code>aiosleep</code>是一个对象，它将暂停一个<code>asyncio</code>协程至少一秒钟，而<code>txsleep</code>对使用<code>Deferred</code> s 的扭曲代码做同样的事情。虽然<code>txsleep</code>像其他任何一个一样是一个<code>Deferred</code>，但<code>aiosleep</code>实际上是一个适用于其他协程的<code>awaiting</code>的协程。</p>
+<p class="Para" id="Par25">像所有协程程序一样，<em class="EmphasisTypeItalic ">必须被</em>编辑才能取得任何进展。这使得它们不适合“启动并忘记”类型的后台操作，这种操作应该在解析一个值时不阻塞调用方。这与<code>txsleep Deferred</code>不同，它将在大约 1 秒后触发，不管它是否有任何回调或错误。</p>
+<p><code>asyncio</code>以<code>Task</code> s 的形式提供解决方案。一个任务将一个协程包装在一个<code>Future</code>和<code>await</code> s 中，由<code>Future</code>代表其创建者。<code>Tasks</code>允许<code>asyncio.gather</code>同时<code>await</code>多个协程。例如，下面的代码将只运行 4 秒钟，而不是 6 秒钟:</p>
+<pre>import asyncio
+
+sleeps = asyncio.gather(asyncio.sleep(2), asyncio.sleep(4))
+asyncio.get_event_loop().run_until_complete(sleeps)
+
+</pre>
+<p class="Para" id="Par27">Twisted 的<code>Deferred</code> s 可以与 asyncio 的<code>Future</code> s 用<code>Deferred.fromFuture</code>和<code>asFuture</code>链接。使用<code>asyncios Task</code>创建 API，比如<code>asyncio.AbstractEventLoop.create_task</code>和<code>asyncio.ensure_future</code>，使得等待<code>asyncio</code>对象的协同程序能够通过<code>Deferred</code>的<code>Future</code>感知接口与 Twisted 进行互操作。</p>
+<p>通过一个例子可以很好地解释如何让<code>asyncio</code>和 Twisted 合作。以下代码展示了我们的三个互操作性指导原则:</p>
+<pre>import asyncio
+from twisted.internet import asyncioreactor
+loop = asyncio.get_event_loop()
+asyncioreactor.install(loop)
+from twisted.internet import defer, task
+
+originalFuture = asyncio.Future(loop=loop)
+originalDeferred = defer.Deferred()
+originalCoroutine = asyncio.sleep(3.0)
+
+deferredFromFuture = defer.Deferred.fromFuture(originalFuture)
+deferredFromFuture.addCallback(print,"from deferredFromFuture")
+deferredFromCoroutine = defer.Deferred.fromFuture(
+    loop.create_task(originalCoroutine))
+deferredFromCoroutine.addCallback(print,"from deferredFromCoroutine")
+futureFromDeferred = originalDeferred.asFuture(loop)
+futureFromDeferred.add_done_callback(
+    lambda result: print(result,"from futureFromDeferred"))
+
+@task.react
+def main(reactor):
+    reactor.callLater(1.0, originalFuture.set_result, "1")
+    reactor.callLater(2.0, originalDeferred.callback, "2")
+    return deferredFromCoroutine
+
+</pre>
+<p class="Para" id="Par29">我们首先用<code>asyncioreactor.install</code>设置 Twisted 的<code>asyncio</code>反应器。这个函数接受一个<code>asyncio</code>事件循环作为它的参数，它将把 Twisted reactor 绑定到这个参数上。如上所述，<code>asyncio.get_event_loop</code>请求全局(在这种情况下是默认的)事件循环策略创建并缓存一个新的循环，以供稍后的<code>get_event_loop</code>调用检索。</p>
+<p class="Para" id="Par30"><code>originalFuture</code>、<code>originalCoroutine</code>和<code>originalDeferred</code>代表我们将在<code>Deferred</code> s 之间转换的三种对象:一个<code>Future</code>，一个<code>await</code> s <code>asyncio</code>代码的协程，以及一个<code>Deferred</code>。</p>
+<p class="Para" id="Par31">接下来，我们通过<code>Deferred.fromFuture</code>类方法将<code>originalFuture</code>与<code>Deferred</code>链接起来，并添加一个<code>print</code>调用作为对新<code>Deferred</code>的回调。记住回调的第一个参数是<code>Deferred</code>的结果，而其他参数会传递给<code>addCallback</code>。</p>
+<p class="Para" id="Par32">在将<code>originalCoroutine</code>传递给<code>Deferred.fromFuture</code>之前，我们必须用<code>create_task</code>将<code>originalCoroutine</code>包装在<code>Task</code>中；然而，在那之后，我们继续我们对<code>deferredFromFuture</code>所做的。</p>
+<p class="Para" id="Par33">正如我们上面看到的，<code>Futures</code>与<code>Deferreds</code>不同，只有在一个<code>asyncio</code>事件循环运行时才会取得进展，<code>asyncio</code>在任何时候都可以有多个事件循环。因此，通过<code>asFuture</code>将<code>originalDeferred</code>与<code>Future</code>相关联需要显式引用事件循环。在提供这个之后，我们安排在<code>originalDeferred</code>和<code>futureFromDeferred</code>解析为一个值时运行一个信息打印回调。这被<code>Future.add_done_callback</code>复杂化了，它只接受单参数回调。我们使用一个<code>lambda</code>来打印结果和信息性消息。</p>
+<p class="Para" id="Par34">如果没有事件循环，这些对象都不会有任何进展，所以我们使用<code>task.react</code>来为我们运行反应器。我们安排<code>originalFuture</code>在至少一秒钟后解析到<code>"1"</code>，而<code>originalDeferred</code>在至少两秒钟后解析到<code>"2"</code>。最后，当<code>deferredFromCoroutine</code>和<code>originalCoroutine</code>完成时，我们终止反应堆。</p>
+<p>运行该程序应该会产生以下输出:</p>
+<pre>1 from deferredFromFuture
+&lt;Future finished result="2"&gt; from futureFromDeferred
+None from deferredFromCoroutine
+
+</pre>
+<p class="Para" id="Par36">第一行对应于我们添加到<code>deferredFromFuture</code>的<code>print</code>回调，第二行对应于<code>futureFromDeferred</code>的回调(注意<code>Future</code>回调接收它们的<code>Future</code>作为它们的参数)，第三行对应于<code>deferredFromCoroutine</code>的回调。</p>
+<p class="Para" id="Par37">这个例子说明了集成<code>asyncio</code>所必需的三个准则，并且以一种抽象的方式扭曲，很难应用于现实世界的问题。然而，正如我们所解释的，不可能给出更具体的仍然普遍适用的建议。但是既然我们现在知道了这些球员，我们可以通过一个案例研究来看看他们是如何一起表演的。</p>
+
+<h2 class="Heading">案例研究:使用 aiohttp 和 treq 的代理</h2>
+<p class="Para" id="Par38"><code>aiohttp</code> ( <a href="https://aiohttp.readthedocs.io"> <code>https://aiohttp.readthedocs.io</code> </a>)是运行在 Python 3.4 及更高版本上的<code>asyncio</code>的成熟 HTTP 客户端和服务器库。</p>
+<p class="Para" id="Par39"><code>treq</code>，正如我们在第<a href="03.html"> 3 章</a>中看到的，是一个构建在 Twisted 之上的高级 HTTP 客户端库。</p>
+<p class="Para" id="Par40">我们可以一起使用这些来构建一个简单的 HTTP 代理。配置为使用 HTTP 代理的客户端向它发送所有请求；然后，代理将这些请求转发给所需的目标，并将其响应发送回客户端。我们将使用<code>aiohttp</code>的服务器部分与客户端对话，使用<code>treq</code>代表客户端检索页面。</p>
+<p class="Para" id="Par41">HTTP 代理用于过滤和缓存内容，以及传递 POSTs、put 和所有其他 HTTP 方法。当它只是将 GET 请求来回传递给客户机时，我们就认为我们的成功了！</p>
+<p>让我们从运行 Twisted 下最简单的<code>aiohttp</code>服务器开始。用 Python 3.4 或更高版本的创建一个新的虚拟环境<em class="EmphasisTypeItalic ">，安装<code>aiohttp</code>，Twisted，和<code>treq</code>，然后运行下面的程序:</em></p>
+<pre>import asyncio
+from twisted.internet import asyncioreactor
+
+asyncioreactor.install(asyncio.get_event_loop())
+
+from aiohttp import web
+from twisted.internet import defer, task
+
+app = web.Application()
+
+async def handle(request):
+    return web.Response(text=str(request.url))
+
+app.router.add_get('/{path:.*}', handle)
+
+async def serve():
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, 'localhost',8000)
+    await site.start()
+
+def asDeferred(f):
+    return defer.Deferred.fromFuture(asyncio.ensure_future(f))
+
+@task.react
+@defer.inlineCallbacks
+def main(reactor):
+    yield asDeferred(serve())
+    yield defer.Deferred()
+
+</pre>
+<p class="Para" id="Par43">我们从安装<code>asyncio</code> Twisted reactor 并将其封装在缓存的事件循环中开始，就像我们在前面的例子中所做的那样。</p>
+<p class="Para" id="Par44">接下来，我们导入<code>aiohttp</code>的 web 模块并构建一个<code>Application</code>，这是库提供的基本 web 应用程序抽象。我们添加一个正则表达式<em class="EmphasisTypeItalic ">路由</em>到它，匹配所有的 URL(<code>.*</code>)，并设置<em class="EmphasisTypeItalic ">句柄</em>协程作为它的处理程序。这个协程接受一个代表客户机请求的<code>aiohttp.web.Request</code>实例作为它的参数，并返回它的 URL 作为响应。</p>
+<p class="Para" id="Par45"><code>serve</code>协程构建了<code>AppRunner</code>和<code>Site</code>对象，这是设置我们的应用程序并将其绑定到网络端口所必需的。</p>
+<p class="Para" id="Par46">我们的应用程序、它的处理程序和<code>serve</code>协程直接取自<code>aiohttp</code>的文档，如果我们根本不使用 Twisted，它们将保持不变。我们从安装<code>asyncio</code>反应堆开始的互操作是在<code>task.react</code>运行的<code>main</code>函数中实现的。像往常一样，这是一个<code>Deferred</code>，尽管这次它使用了<code>inlineCallbacks</code>。我们可以把它写成一个<code>async def</code>风格的协程，然后用<code>ensureDeferred</code>把它转换成一个<code>Deferred</code>；我们选择使用<code>inlineCallbacks</code>来展示不同的风格是如何互换使用的。</p>
+<p class="Para" id="Par47"><code>asDeferred</code>助手函数接受协程或<code>Future</code>。然后，它使用<code>asyncio.ensure_future to</code>来确保它接收到的任何东西都成为<code>Future</code>；如果是协程，则计算为<code>Task</code>，如果是<code>Future</code>，则计算为同一个对象。然后可以将结果传递给<code>Deferred.fromFuture</code>。</p>
+<p class="Para" id="Par48">我们用这个把<code>serve</code>协程包在<code>Deferred</code>里，然后通过等待一个永远不会启动的<code>Deferred</code>来永远阻塞反应堆。</p>
+<p class="Para" id="Par49">运行这个程序将在 Twisted 下运行我们简单的 URL 回显服务。在浏览器中访问<code>http://localhost:8000</code>将返回您用来访问它的 URL 添加路径元素，比如<code>http://localhost:8000/a/b/c</code>，会导致不同的 URL。</p>
+<p>现在我们已经有了基本的东西，我们可以实现我们的代理了:</p>
+<pre>import asyncio
+from twisted.internet import asyncioreactor
+
+asyncioreactor.install(asyncio.get_event_loop())
+
+from aiohttp import web
+from twisted.internet import defer, task
+
+app = web.Application()
+
+async def handle(request):
+    url=str(request.url)
+    headers = Headers({k: request.headers.getall(k)
+                       for k in request.headers})
+    proxyResponse = await asFuture(treq.get(url, headers=headers))
+    print("URL:", url,"code:", proxyResponse.code)
+    response = web.StreamResponse(status=proxyResponse.code)
+    for key, values in proxyResponse.headers.getAllRawHeaders():
+        for value in values:
+            response.headers.add(key.decode(), value.decode())
+    await response.prepare(request)
+    body = await asFuture(proxyResponse.content())
+    await response.write(body)
+    await response.write_eof()
+    return response
+
+app.router.add_get('/{path:.*}', handle)
+
+async def serve():
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, 'localhost',8000)
+    await site.start()
+
+def asFuture(d):
+    return d.asFuture(asyncio.get_event_loop())
+
+def asDeferred(f):
+    return defer.Deferred.fromFuture(asyncio.ensure_future(f))
+
+@task.react @defer.inlineCallbacks
+def main(reactor):
+    yield asDeferred(serve())
+    yield defer.Deferred()
+
+
+
+
+</pre>
+<p class="Para" id="Par51">上面的代码与我们的 miminal <code>aiohttp</code>实现有两处不同:函数<code>handle</code>和一个新的<code>asFuture</code>助手。</p>
+<p class="Para" id="Par52"><code>handle</code>函数首先从客户机的请求中提取目标 URL。回想一下，HTTP 代理的客户端通过在请求行中提供完整的 URL 来指定它们的目标；<code>aiohttp</code>将这个解析后的表示作为<code>request.url</code>可用。</p>
+<p class="Para" id="Par53">接下来，我们从<code>aiohttp</code>请求中恢复所有客户端的头值，并将它们转换成一个<code>twisted.web.http_headers.Headers</code>实例，这样它们就可以包含在出站<code>treq</code>请求中。HTTP 头可以是多值的，<code>aiohttp</code>用不区分大小写的多字典来处理这个问题；<code>request.headers.getall(key)</code>返回请求中该头关键字的所有值的列表。结果字典将键映射到它们的值列表，这与 Twisted 的<code>Headers</code>初始化器相匹配。注意<code>aiohttp</code>把头解码成文本，而 Twisted 的<code>Headers</code>是按字节工作的；幸运的是，Twisted 会自动将文本头键和值自动编码为字节。</p>
+<p class="Para" id="Par54">一旦我们准备好了适合与<code>treq</code>一起使用的客户机头的副本，我们就发出 GET 请求。此时，<code>asyncio</code>事件循环正在调度我们的<code>handle</code>协程，所以无论我们做什么<code>await</code>都必须与<code>asyncio</code>兼容。然而，<code>treq</code>根据<code>Deferred</code> s 工作，这些<em class="EmphasisTypeItalic ">可以被</em>等待，但是当<code>asyncio</code>试图调度它们时会出错而失败。解决方案是将<code>Deferred</code>包装在与调度我们的<code>handler</code>的同一个事件循环相关联的<code>Future</code>中。</p>
+<p class="Para" id="Par55">这正是<code>asFuture</code>助手所做的。因为我们在程序开始时用<code>get_event_loop</code>将我们的反应器绑定到一个全局事件循环，所有后续对<code>get_event_loop</code>的调用都将返回相同的循环。这包括在<code>aiohttp</code>内部的调用和在我们自己的代码内部的调用，这就是<code>asFuture</code>如何用正确的事件循环绑定封闭的<code>Future</code>。</p>
+<p class="Para" id="Par56">正如我们在例子中看到的，<code>asyncio</code>等待<code>Futures</code>完全按照扭曲的方式包装<code>Deferreds</code>，等待<code>Deferreds</code>自己。因此，我们的处理程序恢复并将<code>treq</code>响应对象分配给<code>proxyResponse</code>。此时，我们打印出一条消息，详细说明检索到的 URL 及其状态代码。</p>
+<p class="Para" id="Par57">接下来，我们构造一个<code>aiohttp.web.StreamResponse</code>,并向它提供我们从目标 URL 接收到的相同状态代码，这样客户端将看到代理看到的相同代码。我们还颠倒了头翻译，将 Twisted 的<code>Header</code>键和值复制到我们的<code>StreamResponse</code>的头中。<code>twisted.web.http_headers.Headers.getAllRawHeaders</code>用字节表示头键和值，所以为了<code>StreamResponse</code>的缘故，我们必须解码它们。</p>
+<p class="Para" id="Par58">然后，我们将带有<code>StreamResponse.prepare</code>的响应信封发送回客户端。剩下的就是接收和发送回主体，我们用<code>treq</code>的 Response 的<code>content</code>方法来完成；这又是一个<code>Deferred</code>，所以为了<code>asyncio</code>，我们必须用<code>asFuture</code>把它包起来。</p>
+<p>下面是我们配置一个 web 浏览器作为 HTTP 代理并访问<a href="http://twistedmatrix.com/"> <code>http://twistedmatrix.com/</code> </a> <code>:</code>时程序输出的摘录</p>
+<pre>URL: http://twistedmatrix.com/ code: 200
+URL: http://twistedmatrix.com/trac/chrome/common/css/bootstrap.min.css code:200
+URL: http://twistedmatrix.com/trac/chrome/common/css/trac.css code: 200
+...
+
+</pre>
+
+<h2 class="Heading">摘要</h2>
+<p class="Para" id="Par60">在这一章中，我们学习了如何在一个应用程序中编写 Twisted 和<code>asyncio</code>。因为两者共享<em class="EmphasisTypeItalic ">承诺</em>和<em class="EmphasisTypeItalic ">事件循环</em>的核心概念，所以在<code>asyncio</code>之上扭曲运行是可能的。</p>
+<p class="Para" id="Par61">使用<code>asyncio</code>和 Twisted 需要遵循以下三个准则:总是在<code>asyncio</code>的事件循环之上运行反应器；从扭曲状态调用<code>asyncio</code>时，用<code>Deferred.asFuture</code>将<code>Future</code> s 转换为<code>Deferred</code>s；从<code>asyncio</code>调用 Twisted 时与<code>Deferred.fromFuture</code>相反。</p>
+<p class="Para" id="Par62">因为<code>asyncio</code>仍在发展中，所以不可能提供更具体的集成指南。相反，我们将所学应用于案例研究:一个简单的 GET-only HTTP 代理，带有<code>aiohttp</code>和<code>treq</code>。虽然很小，但我们的代理与真实的应用程序非常相似，以至于我们学会了如何将这些准则付诸实践，并在 Python 的两个异步编程社区之间架起了桥梁。</p>
+
+
+</body>
+</html>

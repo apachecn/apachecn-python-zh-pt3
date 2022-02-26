@@ -1,0 +1,1557 @@
+<html lang="en">
+<head><title>Example: SQL Database Development</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">5.示例:SQL 数据库开发</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">在上一章中，我们探索了使用两种模式的 shell:传统的 SQL 命令执行和使用 X DevAPI 编写 Python 代码在没有 SQL 数据库的情况下进行交互的简短旅程。</p>
+<p class="Para" id="Par3">在这一章中，我们将看到如何使用 shell 开发 Python 代码模块来处理传统的关系数据库。事实上，我们会相信 MySQL Shell 是一个开发工具的说法。</p>
+<p class="Para" id="Par4">我们将首先检查示例应用程序的数据库，然后构建数据库代码来访问数据库中的数据。我们将以循序渐进的方式来完成这项工作，以便让您更好地了解如何使用 shell 来开发您自己的代码。最后，我们将看到一个非常简短的演示，演示如何使用 shell 来测试数据库代码。</p>
+<p class="Para" id="Par5">我们不会详细讨论示例应用程序，因为重点是如何使用 shell，而不是示例应用程序本身。然而，本书的附录包含了用于实现示例应用程序的代码。</p>
+<p class="Para" id="Par6">让我们从检查示例数据库和简要讨论示例应用程序开始。</p>
+<h2 class="Heading">入门指南</h2>
+<p class="Para" id="Par7">能够用散文成功地解释主题，并用实例巩固读者的理解是一回事，但解释使用数据或代码的新方法的好处是完全不同的另一回事。在这些情况下，人们必须以互动的方式演示概念，以便通过例子来证明概念，而不是简单地展示它是如何可能实现的。在这一节中，我们将了解一个努力做到这一点的示例应用程序——证明如何使用 shell 来开发自己的代码。</p>
+<p class="Para" id="Par8">然而，为了以这种方式展示 shell 的全部功能，样本必须足够复杂，具有足够的深度(和宽度)来完成它的角色。因此，这一章，我们将重点解决一个重大问题:如何组织你的车库！</p>
+<p class="Para" id="Par9">好吧，那可能太远了，够不着。让我们回到简单地组织你的车库或车间的工具。如果你有任何工具，或者像我一样，有大量的工具用于各种各样的建造、修理和维护，知道每个工具的位置可能是一个真正的斗争，尤其是当你获得如此多的工具，你需要多个存储位置来存放它们。</p>
+<h3 class="Heading">示例应用程序概念</h3>
+<p class="Para" id="Par10">示例应用程序概念是一个组织概念。因此，我们将存储我们想要组织的事物的描述，包括它们被组织的事物。具体来说，我们想知道我们有哪些工具，它们存放在哪里。如果存储位置是工具箱或橱柜，我们还想知道它在哪个抽屉或架子上。也可能是我们把工具存放在盒子或箱子里，而这些工具又存放在某个地方。因此，我们不仅要建模工具，还要建模工具存储。</p>
+<p class="Para" id="Par11">车库应用程序诞生于更好地组织的需要。事实上，拥有一个杂乱的车库或者只是随意存放你的工具可能会满足一些人的需求，像我这样的其他人需要更多的结构。另外，如果你想知道你是否有某种工具，最好不仅知道你有，而且知道它在哪里！</p>
+<p class="Para" id="Par12">因此，这个应用程序主要被设计为一个查找工具，因此主要关注显示表中所有行的列表视图。</p>
+<p class="Para" id="Par13">这就是存储位置是默认视图的原因。如果你走进你的车库(或车间)，你首先应该看到的是存储设备——工具箱、架子、搁板等。当你寻找一个工具时，你通常会在一个或多个地方(存储设备)寻找，利用你存储它的最后一个地方或公共地方的记忆。但是，如果您有许多工具，可能无法记住每个工具的位置，尤其是如果您已经有一段时间没有使用它了。</p>
+<p class="Para" id="Par14">然而，示例应用程序还提供了一个视图来显示您所有的手动工具和电动工具。这些类别的列表视图显示了为您排序的所有项目。您只需要浏览列表来找到所需的工具，然后查看列来确定工具的存储位置。因此，通过在车库应用程序中点击几次，您就知道去哪里获得您想要的工具。我们将这个示例应用程序称为 MyGarage。酷吧。</p>
+<h3 class="Heading">小费</h3>
+<p class="Para" id="Par15">我们不会解释示例应用程序的每一个细微差别，而是将重点放在最适合用来证明使用 shell 开发代码的实用性的部分——数据库访问代码模块。</p>
+
+<p>让我们快速看一下样例应用程序的部分用户界面。图<a href="#Fig1"> 5-1 </a>显示了手工具记录的详细视图。在这里，我们可以指定供应商、描述、工具大小、类型和位置。通过这种方式，我们可以获取关于一个工具的基本信息，包括哪个公司制造的以及我们把它存放在哪里。</p>
+<p><img alt="../images/478423_1_En_5_Chapter/478423_1_En_5_Fig1_HTML.jpg" src="../images/478423_1_En_5_Chapter/478423_1_En_5_Fig1_HTML.jpg" style="width:35em"/></p>
+<p>图 5-1</p><p class="SimplePara">手动工具详细视图</p>
+
+
+<p class="Para" id="Par17">虽然这个视图看起来相当简单，但是底层数据库的设计要复杂一些。例如，人们可以查看表单并预测我们将有某种方式来存储供应商，因为一个供应商可能有许多工具。您还可以预测存储位置也会出现类似的情况。但是，请考虑一下，一件储物设备可能有一个或多个抽屉或搁板，或者两者都有。因此，我们可能希望对这些工具进行建模。</p>
+<p>在开始数据库设计之前，让我们更好地理解示例应用程序中的对象。下面列出了应用程序中标识的对象及其使用方法。这将有助于理解数据是如何存储的(及其设计)。</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par19"><em class="EmphasisTypeItalic ">手动工具</em>:没有动力的工具</p></li>
+<li><p class="Para" id="Par20"><em class="EmphasisTypeItalic ">电动工具</em>:依靠空气(气动)或电力运行的工具，有线或无线</p></li>
+<li><p class="Para" id="Par21"><em class="EmphasisTypeItalic ">储藏设备</em>:有一个或多个地方可以存放工具(东西)的架子、箱子、柜子等</p></li>
+<li><p class="Para" id="Par22"><em class="EmphasisTypeItalic ">存储位置</em>:存储设备的一个特征，如架子或抽屉</p></li>
+<li><p class="Para" id="Par23"><em class="EmphasisTypeItalic ">整理器</em>:可以放置一个或多个工具，但需要存放在存放处的容器</p></li>
+<li><p class="Para" id="Par24"><em class="EmphasisTypeItalic ">厂商</em>:工具的制造商</p></li>
+</ul>
+
+<p class="Para" id="Par25">让我们看看示例应用程序的存储部分。这可能看起来有点复杂，但是一旦你看到它的实际应用，你就会明白了。假设我们有一个新的工具储物盒，里面有几个抽屉和搁板。如果我们要做一张桌子，只存放箱子，我们怎么知道工具放在哪个抽屉或哪个架子上呢？</p>
+<p class="Para" id="Par26">例如，我们可以将工具列为在<code>tool_chest_1</code>中，但是如果它有十个抽屉和四个架子，那对我们没有多大帮助。谁想要一个告诉你大概位置的应用程序？你不得不拉开抽屉或者随意检查架子，直到找到你的工具。但是，如果我们抽象抽屉和架子，我们可以通过引用存储位置(抽屉、架子)来指定工具箱中给定工具的确切位置，存储位置引用存储设备。</p>
+<p>让我们看一个例子。图<a href="#Fig2"> 5-2 </a>显示了一个可从家装商店(Lowe's)买到的 Kobalt 工具箱。注意衣柜有七个抽屉和两个搁板。</p>
+<p><img alt="../images/478423_1_En_5_Chapter/478423_1_En_5_Fig2_HTML.jpg" src="../images/478423_1_En_5_Chapter/478423_1_En_5_Fig2_HTML.jpg" style="height:30em"/></p>
+<p>图 5-2</p><p class="SimplePara">Kobalt 工具箱</p>
+
+
+<p class="Para" id="Par28">如果我们在表格中为每个抽屉建模或创建条目，那么我们可以在工具、抽屉和工具箱之间分配一个关系。这不仅展示了我们如何更好地分类(组织)我们的数据，还展示了大多数使用真实数据的应用程序的一个关键方面——数据中存在多种一对多关系。</p>
+<p class="Para" id="Par29">既然我们已经了解了示例应用程序的目标以及我们需要如何对存储特性建模，那么让我们来看看数据库是如何设计的。</p>
+
+<h3 class="Heading">数据库设计</h3>
+<p>让我们从实体关系图(ERD)开始我们的数据库设计之旅。图<a href="#Fig3"> 5-3 </a>显示了数据库的 ERD。如果您不熟悉这些图，它们通常会显示表、视图或您想要的任何其他对象，以及实体之间的关系(虚线)。该示例中还包括每个表的索引。有一个视图显示为实心矩形。</p>
+<p><img alt="../images/478423_1_En_5_Chapter/478423_1_En_5_Fig3_HTML.jpg" src="../images/478423_1_En_5_Chapter/478423_1_En_5_Fig3_HTML.jpg" style="width:37.5em"/></p>
+<p>图 5-3</p><p class="SimplePara">我的车库数据库 ERD(版本 1)</p>
+
+
+<p class="Para" id="Par31">花些时间研究一下图表，以便熟悉我们将使用的表格。我们将在本节的后面看到这些表的更多细节。我们将数据库命名为<code>garage_v1</code>，因为我们将在第<a href="07.html"> 7 </a>章中看到如何将该数据库从关系模型迁移到 NoSQL 模型，这将成为<code>garage_v2</code>。</p>
+<p class="Para" id="Par32">您可能会注意到，每个表都有一个定义为自动递增字段的代理键。这是一种很好的、简单的方法，可以确保表中的行是唯一的，并且是一种允许存储多个相同项目的人工机制。例如，在典型的工具收藏中，人们通常有不止一种某种工具，例如锤子、钳子、可调扳手等。使用自动增量键允许我们给每个工具一个独特的<code>Id</code>。</p>
+<p class="Para" id="Par33">现在，让我们看看 ERD 中的每个实体，以便了解它们存储什么。我们将从关系最少的表开始构建，这样您就可以理解它们是如何构建的。</p>
+<p class="Para" id="Par34">当通读这个设计时，精明的读者可能会看到改进设计的方法。然而，回想一下这个示例应用程序的目标是双重的:足够复杂以演示重要的示例，并且读者可以自己运行。因此，采取了一些设计折衷以避免过于复杂。<sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source"> 1 </a> </sup></p>
+<h4 class="Heading">供应商表</h4>
+<p><code>vendor</code>表包含数据库中工具的供应商或制造商的基本信息。我们记录了名称、供应商网站的 URL 以及可以从该供应商那里购买产品的简短描述。清单<a href="#PC1"> 5-1 </a>显示了创建<code>vendor</code>表的 SQL <code>CREATE TABLE</code>命令。</p>
+<pre>CREATE TABLE `garage_v1`.`vendor` (
+  `Id` int(11) NOT NULL AUTO_INCREMENT,
+  `Name` char(50) NOT NULL,
+  `URL` char(128) DEFAULT NULL,
+  `Sources` char(40) DEFAULT NULL,
+  PRIMARY KEY (`Id`)
+) ENGINE=InnoDB AUTO_INCREMENT=100 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+Listing 5-1Vendor Table
+
+
+</pre>
+<p class="Para" id="Par37">注意，我们使用自动递增字段作为主键，这是一个整数字段。仔细查看表格选项。在这里，我们演示如何设置自动递增字段(列)的初始值。在这种情况下，我们选择起始值 100。我们可以为其他表选择其他起始值，使每个 id 范围都有些独特。例如，如果我们将另一个表的起始值设置为 1000，我们一眼就可以看出<code>Id</code>为 103 的行是供应商，而值为 1022 的行来自另一个表。</p>
+<p class="Para" id="Par38">当然，大多数精明的数据库管理员会引用一些关系数据库教科书<sup> <a epub:type="noteref" href="#Fn2" id="Fn2_source"> 2 </a> </sup>中的章节和版本来描述这种做法有多糟糕，但是在实践中，如果您出于调试目的使用类似这样的通用编码形式，这可能会很方便。因为行在不同的表中，所以编码的恐惧或“罪恶”没有实现。也就是没有碰撞的可能。因此，您可以放心，因为这与关系数据库设计并不完全对立；相反，它是一个调试或编码工具。</p>
+
+<h4 class="Heading">组织者表格</h4>
+<p><code>organizer</code>表用于存储关于组织者的信息，比如盒子、箱子、塑壳等等。这有助于解决一些工具具有它们自己的特殊情况和必须组合在一起使用的工具的问题，例如套筒组、某些类型的扳手等。我们还使用了自动递增的技巧，从 2000 开始为<code>Id</code>列赋值。清单<a href="#PC2"> 5-2 </a>显示了创建<code>organizer</code>表的 SQL <code>CREATE TABLE</code>命令。</p>
+<pre>CREATE TABLE `garage_v1`.`organizer` (
+  `Id` int(11) NOT NULL AUTO_INCREMENT,
+  `PlaceId` int(11) NOT NULL,
+  `Type` enum('Bin','Box','Case') DEFAULT 'Case',
+  `Description` char(40) NOT NULL,
+  `Width` int(11) DEFAULT '0',
+  `Depth` int(11) DEFAULT '0',
+  `Height` int(11) DEFAULT '0',
+  PRIMARY KEY (`Id`),
+  KEY `OrganizerStorage_FK_idx` (`PlaceId`),
+  CONSTRAINT `OrganizerStorage_FK` FOREIGN KEY (`PlaceId`) REFERENCES `place` (`Id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB AUTO_INCREMENT=2000 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+Listing 5-2Organizer Table
+
+
+</pre>
+<p class="Para" id="Par41">请注意，该表包含一个外键。外键可以被视为一个表中的一行与另一个表中的一行之间的链接或关系。它们主要用于加强关系。例如，请注意前面的 SQL 代码中的限制。在这里，我们看到外键被限制在删除和更新操作上，因此如果该表中的一行引用了它的<code>Id</code>列，则不能在<code>place</code>表中删除该行。它还指定了在更新中不能更改 place 表中的<code>Id</code>列。这就是它被称为“foreign”的原因，因为它对另一个表施加了限制。这是另一种关系数据库构造，数据库设计人员使用它来帮助构建数据库的健壮性(以及防止意外更改)。</p>
+
+<h4 class="Heading">存储位置表</h4>
+<p>存储位置表(简称为<code>place</code>)用于存储关于我们可以存储东西的位置的信息，比如抽屉或架子。事实上，这个表通过一个名为<code>Type</code>的枚举列仅限于这两种类型。我们还存储一个描述，这个存储位置所在的存储设备的<code>Id</code>,它的尺寸。清单<a href="#PC3"> 5-3 </a>显示了<code>place</code>表的 SQL <code>CREATE TABLE</code>。</p>
+<pre>CREATE TABLE `garage_v1`.`place` (
+  `Id` int(11) NOT NULL AUTO_INCREMENT,
+  `StorageId` int(11) NOT NULL,
+  `Type` enum('Drawer','Shelf') DEFAULT 'Drawer',
+  `Description` char(40) NOT NULL,
+  `Width` int(11) DEFAULT '0',
+  `Depth` int(11) DEFAULT '0',
+  `Height` int(11) DEFAULT '0',
+  PRIMARY KEY (`Id`),
+  KEY `PlaceStorage_FK_idx` (`StorageId`),
+  CONSTRAINT `PlaceStorage_FK` FOREIGN KEY (`StorageId`) REFERENCES `storage` (`Id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB AUTO_INCREMENT=1038 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+Listing 5-3Place Table
+
+
+</pre>
+<p class="Para" id="Par43">这个表也像 organizer 表一样有一个外键。同样，这样做是为了在该表中的某一行引用的存储表中不能删除行(或更改<code>Id</code>列)。</p>
+
+<h4 class="Heading">存储设备表</h4>
+<p class="Para" id="Par44">存储设备表简称为<code>storage</code>,用于存储工具或一般存储结构的信息，如工具箱、橱柜、工作台或架子。事实上，与存储位置表一样，我们使用一个名为<code>Type</code>的枚举列来指定存储设备类型。</p>
+<p>除了存储设备类型，我们还存储了描述、抽屉、搁板和门的数量(如果适用)及其总体尺寸，以及存储其在车库或车间中的位置(物理描述)的通用文本字段。清单<a href="#PC4"> 5-4 </a>显示了针对<code>storage</code>表的 SQL <code>CREATE TABLE</code>命令。</p>
+<pre>CREATE TABLE `garage_v1`.`storage` (
+  `Id` int(11) NOT NULL AUTO_INCREMENT,
+  `VendorId` int(11) NOT NULL,
+  `Type` enum('Cabinet','Shelving','Toolchest','Workbench') DEFAULT 'Toolchest',
+  `Description` char(125) DEFAULT NULL,
+  `NumDrawers` int(11) DEFAULT '0',
+  `NumShelves` int(11) DEFAULT '0',
+  `NumDoors` int(11) DEFAULT '0',
+  `Width` int(11) DEFAULT NULL,
+  `Depth` int(11) DEFAULT NULL,
+  `Height` int(11) DEFAULT NULL,
+  `Location` char(40) DEFAULT NULL,
+  PRIMARY KEY (`Id`),
+  KEY `VendorKey_idx` (`VendorId`),
+  CONSTRAINT `StorageVendor_FK` FOREIGN KEY (`VendorId`) REFERENCES `vendor` (`Id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB AUTO_INCREMENT=503 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+Listing 5-4Storage Table
+
+
+</pre>
+<p class="Para" id="Par46">我们再次看到这个表和 vendor 表之间有一个外键，这样就不会删除任何供应商，也不会更改它的<code>Id</code>列，只要这个表中有引用它的行。</p>
+
+<h4 class="Heading">手工工具桌</h4>
+<p class="Para" id="Par47"><code>handtool</code>表用于存储每个非电动工具的信息。我们收集供应商、描述和尺寸。我们还使用了一个名为<code>Type</code>的枚举字段，它存储了工具的类型，这样我们就可以按类别对工具进行分组。这应该使得发出诸如“显示我所有的螺丝刀”这样的查询更加容易——特别是当一些类别的工具被放在不同的地方时。允许的类型可以在 SQL 语句中看到。</p>
+<p>我们还存储供应商和存储位置的链接(的<code>Id</code>值)。因此，我们正在形成这些表之间的关系。清单<a href="#PC5"> 5-5 </a>显示了针对<code>handtool</code>表的 SQL <code>CREATE TABLE</code>命令。</p>
+<pre>CREATE TABLE `garage_v1`.`handtool` (
+  `Id` int(11) NOT NULL AUTO_INCREMENT,
+  `VendorId` int(11) NOT NULL,
+  `Description` char(125) NOT NULL,
+  `Type` enum('Adjustable Wrench','Awl','Clamp','Crowbar','Drill Bit','File','Hammer','Knife','Level','Nutdriver','Pliers','Prybar','Router Bit','Ruler','Saw','Screwdriver','Socket','Socket Wrench','Wrench') DEFAULT NULL,
+  `ToolSize` char(50) DEFAULT NULL,
+  `PlaceId` int(11) NOT NULL,
+  PRIMARY KEY (`Id`),
+  KEY `VendorKey_idx` (`VendorId`),
+  KEY `PlaceKey_idx` (`PlaceId`),
+  CONSTRAINT `HandtoolPlace_FK` FOREIGN KEY (`PlaceId`) REFERENCES `place` (`Id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `HandtoolVendor_FK` FOREIGN KEY (`VendorId`) REFERENCES `vendor` (`Id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB AUTO_INCREMENT=2253 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+Listing 5-5Handtool Table
+
+
+</pre>
+<p class="Para" id="Par49">在这个表中，我们有两个外键；一个用于存放地点(<code>place</code>)表中的<code>Id</code>，另一个用于<code>vendor</code>表中的<code>Id</code>。</p>
+
+<h4 class="Heading">电动工具台</h4>
+<p class="Para" id="Par50"><code>powertool</code>桌子与<code>handtool</code>桌子相似，只是这里存放的是由空气、电力(主电源)或电池驱动的工具。我们存储了描述和一个名为<code>Typ</code> e 的枚举字段，用于表示工具使用的电源类型。如果我们需要所有气动工具(空气)的列表，这可能会很方便。</p>
+<p>我们还存储供应商和存储位置的链接(的<code>Id</code>值)。因此，我们正在形成这些表之间的关系。清单<a href="#PC6"> 5-6 </a>显示了针对<code>powertool</code>表的 SQL <code>CREATE TABLE</code>命令。</p>
+<pre>CREATE TABLE `garage_v1`.`powertool` (
+  `Id` int(11) NOT NULL AUTO_INCREMENT,
+  `VendorId` int(11) NOT NULL,
+  `Description` char(125) DEFAULT NULL,
+  `Type` enum('Air','Corded','Cordless') DEFAULT NULL,
+  `PlaceId` int(11) NOT NULL,
+  PRIMARY KEY (`Id`),
+  KEY `VendorKey_idx` (`VendorId`),
+  KEY `PlaceKey_idx` (`PlaceId`),
+  CONSTRAINT `PowerToolPlace_FK` FOREIGN KEY (`PlaceId`) REFERENCES `place` (`Id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `PowertoolVendor_FK` FOREIGN KEY (`VendorId`) REFERENCES `vendor` (`Id`) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB AUTO_INCREMENT=3022 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci
+
+Listing 5-6Powertool Table
+
+
+</pre>
+<p class="Para" id="Par52">我们在这个表中拥有与在<code>handtool</code>表中相同的外键；一个用于存放地点(<code>place</code>)表中的<code>Id</code>，另一个用于<code>vendor</code>表中的<code>Id</code>。</p>
+
+<h4 class="Heading">位置视图</h4>
+<p>最后，我们将使用一个视图。这个名为<code>location</code>的视图可以让我们快速获得存储位置和存储设备组合的查找表(视图)。我们可以用它在我们的示例应用程序中创建一个漂亮的下拉列表。图<a href="#Fig4"> 5-4 </a>显示了下拉列表的结果示例。我们将使用这个列表来创建对前面描述的<code>handtool</code>或<code>powertool</code>表中存储位置的引用。请注意，我们看到了一些表格的组合，以便于查看和选择适当的位置。这是现实世界中的应用程序如何利用数据库中的技巧来使用户界面更易于使用的另一个例子。</p>
+<p><img alt="../images/478423_1_En_5_Chapter/478423_1_En_5_Fig4_HTML.jpg" src="../images/478423_1_En_5_Chapter/478423_1_En_5_Fig4_HTML.jpg" style="width:27.5em"/></p>
+<p>图 5-4</p><p class="SimplePara">使用下拉列表中的位置视图</p>
+
+
+<p>这个视图的 SQL 相当复杂，涉及到一个连接(在关系数据库中很常见),它将两个表中的信息结合起来。清单<a href="#PC7"> 5-7 </a>显示了视图<code>location</code>的 SQL <code>CREATE VIEW</code>。请注意，视图重命名了一些列(使用<code>AS</code>关键字)，以便更容易区分每个表中的字段。这一点尤其重要，因为我们为每个表的主键使用了一个通用的“<code>Id</code>”。<sup> <a epub:type="noteref" href="#Fn3" id="Fn3_source"> 3 </a> </sup></p><pre>CREATE ALGORITHM=UNDEFINED DEFINER=`root`@`localhost` SQL SECURITY DEFINER VIEW `garage_v1`.`location` AS
+    SELECT `garage_v1`.`storage`.`Id` AS `StorageId`,
+           `garage_v1`.`storage`.`Description` AS `StorageEquipment`,
+           `garage_v1`.`place`.`Id` AS `PlaceId`,
+           `garage_v1`.`place`.`Type` AS `Type`,
+           `garage_v1`.`place`.`Description` AS `Location`
+    FROM (`garage_v1`.`storage` JOIN `garage_v1`.`place` ON
+        ((`garage_v1`.`storage`.`Id` = `garage_v1`.`place`.`StorageId`)))
+
+Listing 5-7Location View
+
+
+</pre>
+
+<p class="Para" id="Par56">现在，让我们花点时间来讨论数据库代码设计。</p>
+
+
+<h3 class="Heading">代码设计</h3>
+<p class="Para" id="Par57">虽然你可能会在数据库设计中看到一些你会以不同方式做的事情<sup> <a epub:type="noteref" href="#Fn4" id="Fn4_source"> 4 </a> </sup>并且有几种“正确”的方式来做事情，但是代码设计将它们带到了一个更高的层次。也就是说，给两个程序员和一组要评审的代码，他们可能会花更多的时间仔细检查这种或那种编码方式的细微之处，而不是一开始就去写。这并不是说审查是无益的——它肯定是有益的——相反，这意味着总是有办法使用不同的机制、结构和哲学在代码中做同样的事情。</p>
+<p>这适用于为示例应用程序设计的代码。选择使代码模块化，更容易阅读，最重要的是，演示(一种方式)构建关系数据库应用程序。因此，您将要遇到的可能不是您应该如何编写代码，但是它应该仍然可以以当前的形式用于演示目的。更具体地说，为示例应用程序做出的代码设计选择包括:</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par60">将 Flask 框架用于基于 web 的界面</p></li>
+<li><p class="Para" id="Par61">使用一个类来表示数据库中的每个表</p></li>
+<li><p class="Para" id="Par62">将单个类放在它自己的代码模块中</p></li>
+<li><p class="Para" id="Par63">将所有数据库代码模块放在它自己的文件夹(名为 database)中</p></li>
+<li><p class="Para" id="Par64">使用类封装到数据库服务器的连接</p></li>
+<li><p class="Para" id="Par65">使用类模块测试每个表/视图类</p></li>
+<li><p class="Para" id="Par66">使用从 shell 运行的代码模块来测试类模块</p></li>
+</ul>
+
+<p class="Para" id="Par67">我们将在演示中看到这些约束中的大部分。如前所述，用户界面的描述包含在附录中。</p>
+<p class="Para" id="Par68">我们在这一部分关注的代码包括我们需要与数据库交互的代码。因此，我们需要实现创建、读取、更新和删除(CRUD)操作的代码。我们还需要代码来帮助我们连接到数据库服务器。</p>
+<p>表<a href="#Tab1"> 5-1 </a>显示了每个计划的数据库代码文件的代码模块、类名和描述。在下一节中，我们将看到如何使用 shell 来开发这些组件。</p>
+<p>表 5-1</p><p class="SimplePara">数据库代码模块</p>
+
+
+<table style="border-collapse: collapse;border-top: 0.5pt solid ; border-bottom: 0.5pt solid ; border-left: 0.5pt solid ; border-right: 0.5pt solid ; "><colgroup><col class="tcol1 align-left"/>
+<col class="tcol2 align-left"/>
+<col class="tcol3 align-left"/>
+</colgroup>
+<thead><tr><th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">代码模块</p>
+</th>
+<th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">类别名</p>
+</th>
+<th style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">描述</p>
+</th>
+</tr>
+</thead>
+<tbody><tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>garage_v1</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>MyGarage</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">实现与服务器和通用服务器接口的连接</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>handtool.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Handtool</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">为手工工具表建模</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>location.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Location</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">模拟位置视图</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>organizer.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Organizer</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">模拟组织者表格</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>place.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Place</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">模拟位置表</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>powertool.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Powertool</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">为电动工具表建模</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>storage.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Storage</code></p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">为存储表建模</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>vendor.py</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>Vendor</code></p>
+</td>
+<td style="text-align: left;"><p class="SimplePara">对供应商表建模</p>
+</td>
+</tr>
+</tbody>
+</table>
+
+<p class="Para" id="Par70">当我们为示例应用程序编写代码以使用这些代码模块时，我们将使用<code>MyGarage</code>类连接到数据库服务器，并且当被请求时，使用与每个表相关联的类来调用每个表上的 CRUD 操作。唯一的例外是<code>Location</code>类只实现读取操作，因为它是一个视图，而视图被用作查找(读取)表。</p>
+<p class="Para" id="Par71">现在我们已经了解了示例应用程序及其设计的目标，让我们开始为示例应用程序编写数据库代码。</p>
+
+
+<h2 class="Heading">设置和配置</h2>
+<p class="Para" id="Par72">以下演示的设置不需要安装任何东西，甚至不需要使用示例应用程序；相反，我们只需要加载示例数据库，因为我们将只使用数据库代码模块。虽然图像用于描述示例应用程序的某些方面，但在本章中并不一定需要它。同样，关于如何设置和使用完整的示例应用程序，请参见附录。</p>
+<p class="Para" id="Par73">要安装示例数据库，我们必须从图书网站(<a href="https://www.apress.com/us/book/9781484250822"> <code>https://www.apress.com/us/book/9781484250822</code> </a>)下载示例源代码。选择本章的文件夹并下载文件。示例源代码包含一个名为<code>database/garage_v1.sql</code>的文件，该文件包含用于创建示例数据库并使用示例数据填充该数据库的 SQL 语句。</p>
+<p class="Para" id="Par74">这个文件不仅发出<code>CREATE DATABASE</code>和<code>CREATE TABLE</code>命令，还包含使用<code>INSERT</code> SQL 命令的每个表的一小组数据。也就是说，它是一个典型的车库或车间中一套工具的库存。所以，你不必花宝贵的时间去想出描述、尺寸等。对于要使用的一组数据，已经为您做好了！</p>
+<p>由于这个文件是一个 SQL 文件，我们将需要对 shell 使用<code>--sql</code>模式。幸运的是，我们可以使用选项来读取这个文件，导入(源)它，然后退出，如下所示。请记住，您必须指定文件的路径，或者从文件所在的目录执行 shell。</p>
+<pre>mysqlsh --uri root@localhost:3306 --sql -f garage_v1.sql
+
+</pre>
+<p class="Para" id="Par76">转到数据库文件夹，发出以下命令，告诉 shell 打开文件并执行语句。运行它不需要一分钟，因为我们是在批处理模式下运行的，完成后将退出 shell。清单<a href="#PC9"> 5-8 </a>显示了运行这些命令的结果。如果您对文件中的命令感到好奇，可以随意打开它，看看 SQL 语句是如何编写的。您应该注意到这是一个使用<code>mysqlpump</code>服务器客户端应用程序的数据库转储。</p>
+<h3 class="Heading">小费</h3>
+<p class="Para" id="Par77">关于<code>mysqlpump</code>的更多信息，请参见<a href="https://dev.mysql.com/doc/refman/8.0/en/mysqlpump.html"> <code>https://dev.mysql.com/doc/refman/8.0/en/mysqlpump.html</code> </a>。</p>
+
+<p>
+             
+          </p>
+<pre>C:\Users\cbell\Documents\mygarage_v1&gt;cd database
+C:\Users\cbell\Documents\mygarage_v1\database&gt;mysqlsh --uri root@localhost:3306 --sql -f garage_v1.sql
+Records: 31  Duplicates: 0  Warnings: 0
+Records: 6  Duplicates: 0  Warnings: 0
+Records: 250  Duplicates: 0  Warnings: 0
+Records: 3  Duplicates: 0  Warnings: 0
+Records: 0  Duplicates: 0  Warnings: 0
+Records: 0  Duplicates: 0  Warnings: 0
+Records: 0  Duplicates: 0  Warnings: 0
+Records: 0  Duplicates: 0  Warnings: 0
+Records: 22  Duplicates: 0  Warnings: 0
+Records: 0  Duplicates: 0  Warnings: 0
+Records: 0  Duplicates: 0  Warnings: 0
+Records: 0  Duplicates: 0  Warnings: 0
+Records: 0  Duplicates: 0  Warnings: 0
+Records: 22  Duplicates: 0  Warnings: 0
+Records: 0  Duplicates: 0  Warnings: 0
+Records: 0  Duplicates: 0  Warnings: 0
+Records: 2  Duplicates: 0  Warnings: 0
+Records: 3  Duplicates: 0  Warnings: 0
+
+Listing 5-8Populating the Example Database (Windows 10)
+
+
+</pre>
+          <p class="Para" id="Par79">既然我们已经创建并填充了数据库，我们就可以开始探索数据库代码模块了！</p>
+
+<h2 class="Heading">示范</h2>
+<p class="Para" id="Par80">当您从图书网站下载相同的源代码时，您可能已经意识到代码模块包含在下载中并且是完整的。因此，如果你是一个精明的 Python 程序员，你可能会想浏览或跳过这一章的其余部分。但是，您应该继续阅读，因为我们将看到如何使用 shell 来帮助开发这些模块的演示。也就是说，我们将使用 shell 开始为示例应用程序开发 Python 代码。</p>
+<h3 class="Heading">注意</h3>
+<p class="Para" id="Par81">本章完整的工作示例应用程序可以从本书的网站上下载。请参阅附录，了解如何设置您的机器来运行该应用程序。</p>
+
+<p>如果你以前从未使用 Python 编程，不要担心，因为它是一种非常容易学习的语言。事实上，您只需要遵循本节中的示例，到最后您就会对代码在做什么(以及为什么)有一个坚实的理解。但是，如果您想学习 Python 或者需要更深入的 Python 知识，有几本关于这个主题的优秀书籍。下面我列出了几个我最喜欢的。Python 网站上的文档是一个很好的资源:python.org/doc/.</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par83"><em class="EmphasisTypeItalic "> Pro Python </em>，第二版(Apress 2014)，J. Burton Browning，Marty Alchin</p></li>
+<li><p class="Para" id="Par84"><em class="EmphasisTypeItalic ">学习 Python </em>，第五版(奥赖利媒体 2013)，马克·卢茨</p></li>
+<li><p class="Para" id="Par85"><em class="EmphasisTypeItalic ">用 Python 自动化枯燥的东西:面向所有初学者的实用编程</em>(无淀粉出版社，2015 年)，Al Sweigart</p></li>
+</ul>
+
+<p class="Para" id="Par86">在接下来的部分中，我们将看到如何先创建最简单的类(Location ),然后再创建一些其他的类。正如你将看到的，它们遵循相同的设计模式/布局，所以一旦你看到一两个，其他的就很容易预测了。因此，我们将看到使用两个类的详细演练，为了简洁起见，其余的将被演示和呈现较少的细节。</p>
+<p class="Para" id="Par87">如果您想跟进，请确保已经加载了示例数据库，并且 MySQL Shell 已经准备就绪。您可能还想使用代码或文本编辑器来编写代码模块。更重要的是，您应该创建一个名为<code>database</code>的文件夹，并从父文件夹启动 shell。</p>
+<p class="Para" id="Par88">例如，您应该创建一个名为<code>mygarage_v1,</code>的文件夹，并在该文件夹中创建<code>database</code>文件夹。然后，我们将执行来自<code>mygarage_v1. Why? Because we will use</code>Python import 指令的 shell，并使用文件夹名命名代码模块的路径(例如<code>from database import Location</code>)。我们还将创建单元测试，因此需要一个名为<code>unittests</code>的文件夹来存储测试文件。</p>
+<p class="Para" id="Par89">让我们从<code>MyGarage</code>类开始。</p>
+<h3 class="Heading">我的车库班</h3>
+<p>该类旨在通过提供登录(连接)到服务器的机制和封装一些常见操作(如获取会话、当前数据库、检查到 MySQL 的连接是否活动、断开连接等)来简化 MySQL 服务器的工作。我们还将包括将 SQL 结果或 select 结果转换为 Python 列表(数组)的方法，以便于处理。表<a href="#Tab2"> 5-2 </a>显示了我们将为这个类创建的方法的完整列表，包括所需的参数(一些方法不需要它们)。</p>
+<p>表 5-2</p><p class="SimplePara">我的车库类方法</p>
+
+
+<table style="border-collapse: collapse;border-top: 0.5pt solid ; border-bottom: 0.5pt solid ; border-left: 0.5pt solid ; border-right: 0.5pt solid ; "><colgroup><col class="tcol1 align-left"/>
+<col class="tcol2 align-left"/>
+<col class="tcol3 align-left"/>
+</colgroup>
+<thead><tr><th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">方法</p>
+</th>
+<th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">因素</p>
+</th>
+<th style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">描述</p>
+</th>
+</tr>
+</thead>
+<tbody><tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>__init__()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">mysqlx_sh(消歧义)</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">构造函数-如果从 MySQL Shell 运行，则提供 mysqlx</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>connect()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">用户名，密码，主机，端口</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">连接到主机端口的 MySQL 服务器</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_session()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">返回会话以便在其他类中使用</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>get_db()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">返回数据库供其他类使用</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>is_connected()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">检查是否连接到服务器</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>disconnect()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">断开与服务器的连接</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>make_rows()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">sql_select</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">为从选择结果的读取操作返回的行返回 Python 数组</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>make_rows_sql()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara">sql_res，num_cols</p>
+</td>
+<td style="text-align: left;"><p class="SimplePara">为从 sql 结果的读取操作返回的行返回 Python 数组</p>
+</td>
+</tr>
+</tbody>
+</table>
+
+<h4 class="Heading">编写源代码</h4>
+<p class="Para" id="Par91">对于这个代码模块，我们不会使用 shell 来开发代码，因为这更像是一个方便的类，并且您已经看到了它的大多数方法的例子，或者至少是代码中使用的<code>mysqlx</code>模块中的方法。相反，我们将看到完整的代码，然后看看如何使用 shell 测试该类。该类维护当前会话，并隐藏了与服务器连接和断开连接的大部分机制。</p>
+<p class="Para" id="Par92">有些人可能倾向于将连接机制转移到类中(您也可以这样做)，但是使用单独的类来管理意味着您不会复制任何代码，这总是首选的。</p>
+<p class="Para" id="Par93">清单<a href="#PC10"> 5-9 </a>显示了<code>MyGarage</code>类的完整代码。在您的文本或代码编辑器中打开一个新文件，并将该代码保存在名为<code>garage_v1.py</code>的文件的<code>database</code>文件夹中。花几分钟时间通读代码。即使你正在学习 Python，它也应该易于阅读和理解。</p>
+<h3 class="Heading">注意</h3>
+<p class="Para" id="Par94">为简洁起见，本章源代码清单中的注释和不必要的行已被删除。</p>
+
+<p>
+                 
+              </p>
+<pre>from __future__ import print_function
+
+# Attempt to import the mysqlx module. If unsuccessful, we are
+# running from the shell and must pass mysqlx in to the class
+# constructor.
+try:
+    import mysqlx
+except Exception:
+    print("Running from MySQL Shell. Provide mysqlx in constructor.")
+
+class MyGarage(object):
+    def __init__(self, mysqlx_sh=None):
+        self.session = None
+        if mysqlx_sh:
+            self.mysqlx = mysqlx_sh
+            self.using_shell = True
+        else:
+            self.mysqlx = mysqlx
+            self.using_shell = False
+
+    def connect(self, username, passwd, host, port):
+        config = {
+            'user': username,
+            'password': passwd,
+            'host': host,
+            'port': port,
+        }
+        try:
+            self.session = self.mysqlx.get_session(∗∗config)
+        except Exception as err:
+            print("CONNECTION ERROR:", err)
+            self.session = None
+            raise
+
+    def get_session(self):
+        return self.session
+
+    def get_db(self):
+        return self.session.get_schema('garage_v1')
+
+    def is_connected(self):
+        return self.session and (self.session.is_open())
+
+    def disconnect(self):
+        try:
+            self.session.close()
+        except Exception as err:
+            print("WARNING: {0}".format(err))
+
+
+
+
+
+
+    def make_rows(self, sql_select):
+        cols = []
+        if self.using_shell:
+            cols = sql_select.get_column_names()
+        else:
+            for col in sql_select.columns:
+                cols.append(col.get_column_name())
+        rows = []
+        for row in sql_select.fetch_all():
+            row_item = []
+            for col in cols:
+                if self.using_shell:
+                    row_item.append("{0}".format(row.get_field(col)))
+                else:
+                    row_item.append("{0}".format(row[col]))
+            rows.append(row_item)
+        return rows
+
+    @staticmethod
+    def make_rows_sql(sql_res, num_cols):
+        rows = []
+        all_rows = sql_res.fetch_all()
+        for row in all_rows:
+            row_item = []
+            for col in range(0, num_cols):
+                row_item.append("{0}".format(row[col]))
+            rows.append(row_item)
+        return rows
+
+    def get_last_insert_id(self):
+        return self.get_session().sql(
+            "SELECT LAST_INSERT_ID()").execute().fetch_one()
+
+
+
+
+Listing 5-9
+garage_v1 Code
+
+
+
+</pre>
+              <p class="Para" id="Par96">注意<code>import</code>行。这被放在一个<code>try</code> … <code>except</code>块中，因为当从 shell 中使用代码模块时，shell 并不直接公开<code>mysqlx</code>模块(它是内置模块之一)。相反，我们可以在构造函数中提供内置<code>mysqlx</code>模块的实例。</p>
+<p class="Para" id="Par97">实际上，<code>__init__()</code>接受一个参数，<code>mysql_sh</code>，我们可以用它从 shell 中运行代码。这是让您的代码既可以在 shell 中使用，也可以交互使用(在应用程序中)的一个好方法。</p>
+<p class="Para" id="Par98">还要注意，我们使用了一个变量<code>self.using_shell</code>来存储我们是否在使用 shell。这在<code>make_rows</code>∫方法中是需要的，因为外壳中的<code>mysqlx</code>模块与连接器中提供的<code>mysqlx</code>模块略有不同。参见下面的侧栏，了解为什么会这样。</p>
+<h3 class="Heading">外壳和连接器的差异</h3>
+<p class="Para" id="Par99">当您进入更高级的应用程序时，您会注意到 MySQL Shell 中使用的<code>mysqlx</code>模块与 MySQL 连接器(Connector/Python、Connector/J 等)中使用的模块有所不同。).这些差异的原因主要是因为希望保持模块中方法的操作或机制在不同语言之间是相同的。由于连接器支持的语言很多，标准化行为的尝试导致了 shell 如何实现相同方法的一些细微差异。幸运的是，差异很小，很容易纠正。</p>
+
+<p class="Para" id="Par100">现在我们已经写好了源代码，让我们使用 MySQL Shell 来测试这个类。</p>
+
+<h4 class="Heading">测试类</h4>
+<p>在我们开始测试这个类之前，我们必须设置 Python path 变量(<code>PYTHONPATH</code>)来包含我们想要运行测试的文件夹。这是因为我们使用的模块没有安装在系统级，而是位于与我们测试的代码相关的文件夹中。在 Windows 中，可以使用以下命令将执行路径添加到 Python 路径中。</p>
+<pre>C:\Users\cbell\Documents\my_garage_v1&gt; set PYTHONPATH=%PYTHONPATH%;c:\users\cbell\Documents\mygarage_v1
+
+</pre>
+<p>或者，在 Linux 和 macOS 上，您可以使用这个命令来设置 Python 路径。</p>
+<pre>export PYTHONPATH=$(pwd);$PYTHONPATH
+
+</pre>
+<p>现在我们可以运行 shell 了。为此，我们将使用<code>--py</code>选项在 Python 模式下启动。让我们在课堂上练习一些方法。我们可以尝试所有的方法，除了<code>make_rows()</code>方法。我们稍后会看到这些。清单<a href="#PC13"> 5-10 </a>展示了如何在 shell 中导入类，初始化(创建)一个名为<code>mygarage</code>的类实例，然后连接<code>connect()</code>，并执行一些方法。最后，我们调用<code>disconnect()</code>来关闭与服务器的连接。</p>
+<pre>C:\Users\cbell\Documents\my_garage_v1&gt; mysqlsh --py
+MySQL  Py &gt; from database.garage_v1 import MyGarage
+Running from MySQL Shell. Provide mysqlx in constructor.
+MySQL  Py &gt; myg = MyGarage(mysqlx)
+MySQL  Py &gt; myg.connect('root', 'SECRET', 'localhost', 33060)
+MySQL  Py &gt; db = myg.get_db()
+MySQL  Py &gt; db
+&lt;Schema:garage_v1&gt;
+MySQL  Py &gt; s = myg.get_session()
+MySQL  Py &gt; s
+&lt;Session:root@localhost:33060&gt;
+MySQL  Py &gt; myg.is_connected()
+true
+MySQL  Py &gt; myg.disconnect()
+MySQL  Py &gt; myg.is_connected()
+false
+
+Listing 5-10Testing MyGarage using MySQL Shell
+
+
+</pre>
+<p class="Para" id="Par104">注意这里我们导入了模块，然后在内置的<code>mysqlx</code>模块中创建了一个类实例。然后，我们连接到服务器(确保使用您系统的密码)，检索数据库并打印它(通过将变量放在一行上并按下<em class="EmphasisTypeItalic "> ENTER </em>，为会话做同样的事情，然后最后测试<code>is_connected()</code>和<code>disconnect()</code>方法。</p>
+<p class="Para" id="Par105">在执行过程中，我们发出 print()语句来打印方法调用的一些结果。shell 的一个很好的特性是，如果您打印一个类实例变量，它会显示该变量的类名。这是你可以用来帮助你学习课程和选择正确方法的另一个技巧。这将节省你继续学习 X DevAPI 的时间。</p>
+<h3 class="Heading">警告</h3>
+<p class="Para" id="Par106">该类使用<code>mysqlx</code>模块，这需要 X 协议连接。确保使用 X 协议端口(默认为 33060)。</p>
+
+<p>如果您想将这些命令保存在一个文件中，您可以。事实上，这是测试代码类(单元)的手工单元测试的一种形式。<sup> <a epub:type="noteref" href="#Fn5" id="Fn5_source"> 5 </a> </sup>为了在批处理模式下更容易阅读，我们将添加一些<code>print()</code>语句。要运行这个测试，创建一个名为<code>unittests</code>的文件夹，并将名为<code>garage_v1_test.py</code>的文件放在那里。清单<a href="#PC14"> 5-11 </a>显示了文件的完整清单。我们还添加了提示用户 Id 和密码的代码，这比硬编码在文件中要好得多！</p><pre>from getpass import getpass
+from database.garage_v1 import MyGarage
+
+print("MyGarage Class Unit test")
+mygarage = MyGarage(mysqlx)
+user = raw_input("User: ")
+passwd = getpass("Password: ")
+print("Connecting...")
+mygarage.connect(user, passwd, 'localhost', 33060)
+print("Getting the database...")
+database = mygarage.get_db()
+print(database)
+print("Getting the session...")
+session = mygarage.get_session()
+print(session)
+print("Connected?")
+print(mygarage.is_connected())
+print("Disconnecting...")
+mygarage.disconnect()
+print("Connected?")
+print(mygarage.is_connected())
+
+
+
+
+
+Listing 5-11
+garage_v1_test.py
+
+
+
+</pre>
+
+<p>稍后，如果您想执行它，可以使用下面的命令。记得从您之前创建的文件夹(<code>mygarage_v1</code>)中运行这个。这是一个很好的方法，可以确保在不对整个应用程序进行排序的情况下测试部分代码。清单<a href="#PC15"> 5-12 </a>显示了测试代码的执行。</p>
+<pre>&gt; mysqlsh --py -f unittests\garage_v1_test.py
+Running from MySQL Shell. Provide mysqlx in constructor.
+MyGarage Class Unit test
+User: root
+Password:
+Connecting...
+Getting the database...
+&lt;Schema:garage_v1&gt;
+Getting the session...
+&lt;Session:root@localhost:33060&gt;
+Connected?
+True
+Disconnecting...
+Connected?
+False
+
+Listing 5-12Running the garage_v1_test Unit Test
+
+
+</pre>
+<p class="Para" id="Par110">现在，让我们看一下最简单的类，它们对一个数据库表建模，或者在本例中，对一个视图建模。</p>
+
+
+<h3 class="Heading">位置类别</h3>
+<p class="Para" id="Par111">这个类是<code>location</code>视图的一个模型。回想一下，<code>location</code>视图执行连接，将所有存储位置和存储设备的列表合并到一个列表中，该列表可以用作查找表。因此，这个类只需要实现 read CRUD 操作。</p>
+<p class="Para" id="Par112">在下一节中，我们将演示如何使用 MySQL Shell 编写该类的源代码。</p>
+<h4 class="Heading">编写源代码</h4>
+<p class="Para" id="Par113">使用 shell 编写代码的方法之一是使用交互式会话，一次编写一行代码。这允许您尝试如何组织代码，更重要的是，学习使用哪些方法。</p>
+<p>对于这个类，我们只需要 read 操作来填充手工具、电动工具和管理器表的详细信息表单中的下拉列表。因为我们使用<code>database\garage_v1.py</code>代码模块进行数据库连接，所以我们需要首先初始化这个类。一旦我们登录并拥有了一个<code>MyGarage</code>类的实例，我们就可以用它来获取表并读取表中的行。清单<a href="#PC16"> 5-13 </a>显示了可以完成这些步骤的代码。</p>
+<pre>from database.garage_v1 import MyGarage
+LOCATION_READ_COLS = ['PlaceId', 'StorageEquipment', 'Type', 'Location']
+LOCATION_READ_BRIEF_COLS = ['StorageEquipment', 'Type', 'Location']
+mygarage = MyGarage(mysqlx)
+mygarage.connect('root', 'SECRET', 'localhost', 33060)
+schema = mygarage.get_db()
+table = schema.get_table('location')
+sql_res = table.select(LOCATION_READ_COLS).order_by(∗LOCATION_READ_BRIEF_COLS).limit(5).execute()
+rows = mygarage.make_rows(sql_res)
+print(rows)
+
+Listing 5-13
+Primitive Code
+
+
+
+</pre>
+<p>注意这里我们使用常量来设置列名。这使得<code>select()</code>方法中的代码更好一些，尤其是如果您使用需要列名列表的其他子句。在本例中，我们还使用了<code>limit()</code>方法，该方法将输出限制在前五行，这使得代码的执行很简短。清单<a href="#PC17"> 5-14 </a>展示了这个代码在 shell 中的执行。</p>
+<pre>MySQL  Py &gt; from database.garage_v1 import MyGarage
+MySQL  Py &gt; LOCATION_READ_COLS = ['PlaceId', 'StorageEquipment', 'Type', 'Location']
+MySQL  Py &gt; LOCATION_READ_BRIEF_COLS = ['StorageEquipment', 'Type', 'Location']
+MySQL  Py &gt; mygarage = MyGarage(mysqlx)
+MySQL  Py &gt; mygarage.connect('root', 'SECRET', 'localhost', 33060)
+MySQL  Py &gt; schema = mygarage.get_db()
+MySQL  Py &gt; table = schema.get_table('location')
+MySQL  Py &gt; sql_res = table.select(LOCATION_READ_COLS).order_by(∗LOCATION_READ_BRIEF_COLS).limit(5).execute()
+MySQL  Py &gt; rows = mygarage.make_rows(sql_res)
+MySQL  Py &gt; print(rows)
+[['1007', 'Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Bottom'], ['1001', 'Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Left 1'], ['1002', 'Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Left 2'], ['1003', 'Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Left 3'], ['1004', 'Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Right 1']]
+
+Listing 5-14Executing the Primitive Code
+
+
+</pre>
+<p class="Para" id="Par116">虽然这些行的输出不是以易读的方式打印出来的(实际上并不需要)，但是如果您想查看细节，可以添加代码来实现这一点，但是打印原始 Python 列表就足以看到返回了 5 行。</p>
+<p class="Para" id="Par117">现在，让我们从前面的示例代码中构造一个类。我们简单地应用编码构造来创建一个只有一个名为<code>read()</code>的方法的类。我们还使用 mysqlx 对象的实例编写了一个构造函数来获取该表。清单<a href="#PC18"> 5-15 </a>显示了修改后的代码。</p>
+<p class="Para" id="Par118">虽然本章中的清单显示了如何键入创建类所需的代码，但是有一点您必须遵循的过程。具体来说，您必须在类声明及其方法之间输入带有空格的行。这是因为当您在空白行上按下<em class="EmphasisTypeItalic "> ENTER </em>时，shell 将评估类代码。这同样适用于任何多行代码块，包括字典、列表等。</p>
+<h3 class="Heading">警告</h3>
+<p class="Para" id="Par119">如果您遇到关于意外缩进的错误，即使代码是正确的，也可以尝试使用带有空格的行来分隔方法。请注意，您可以在批处理模式下执行文件，而不需要带有空格的行。</p>
+
+<p>
+                 
+              </p>
+<pre>from database.garage_v1 import MyGarage
+LOCATION_READ_COLS = ['PlaceId', 'StorageEquipment', 'Type', 'Location']
+LOCATION_READ_BRIEF_COLS = ['StorageEquipment', 'Type', 'Location']
+class Location(object):
+    def __init__(self, myg):
+        self.table = myg.get_db().get_table('location')
+
+    def read(self):
+        sql_res = self.table.select(LOCATION_READ_COLS).order_by(
+                  ∗LOCATION_READ_BRIEF_COLS).limit(5).execute()
+        return(mygarage.make_rows(sql_res))
+
+mygarage = MyGarage(mysqlx)
+mygarage.connect('root', 'SECRET', 'localhost', 33060)
+location = Location(mygarage)
+rows = location.read()
+print(rows)
+
+Listing 5-15Location Class Primitive
+
+
+</pre>
+              <p class="Para" id="Par121">请注意，我们创建了一个带有构造函数的类，该构造函数设置了一个包含该类的类变量。这是从 X DevAPI 运行方法以实现 CRUD 操作所必需的。记住，我们已经有了来自<code>MyGarage</code>类实例(<code>myg</code>)的连接，并且它被传递到构造函数的 Location 类中。</p>
+<p>那只是班级代码。我们还需要添加代码来执行或测试该类。我们在课后补充。当我们将这段代码放在一个文件(名为<code>listing5-15.py</code>)中并执行它时，shell 将按照编写的方式创建类并执行类后面的代码行。例如，我们使用以下命令执行清单，该命令告诉 shell 打开文件，并以 Python 模式一次运行一行文件的内容。</p>
+<pre>$ mysqlsh --py -f listing5-15.py
+
+</pre>
+<p>现在，当我们在 shell 中执行该代码时，我们得到与之前相同的输出，如清单<a href="#PC20"> 5-16 </a>所示。</p>
+<pre>MySQL  Py &gt; from database.garage_v1 import MyGarage
+Running from MySQL Shell. Provide mysqlx in constructor.
+
+MySQL  Py &gt; LOCATION_READ_COLS = ['PlaceId', 'StorageEquipment', 'Type', 'Location']
+MySQL  Py &gt; LOCATION_READ_BRIEF_COLS = ['StorageEquipment', 'Type', 'Location']
+MySQL  Py &gt; class Location(object):
+          -&gt;     def __init__(self, myg):
+          -&gt;         self.table = myg.get_db().get_table('location')
+          -&gt;
+          -&gt;     def read(self):
+          -&gt;         sql_res = self.table.select(LOCATION_READ_COLS).order_by(∗LOCATION_READ_BRIEF_COLS).limit(5).execute()
+          -&gt;         return(mygarage.make_rows(sql_res))
+          -&gt;
+MySQL  Py &gt; mygarage = MyGarage(mysqlx)
+MySQL  Py &gt; mygarage.connect('root', 'SECRET', 'localhost', 33060)
+MySQL  Py &gt; location = Location(mygarage)
+MySQL  Py &gt; rows = location.read()
+MySQL  Py &gt; print(rows)
+[['1007', 'Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Bottom'], ['1001', 'Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Left 1'], ['1002', 'Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Left 2'], ['1003', 'Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Left 3'], ['1004', 'Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Right 1']]
+
+Listing 5-16Executing the Location Class Primitive
+
+
+</pre>
+<p class="Para" id="Par124">正如你所看到的，我们不仅能够编写这个类，我们还在最后测试了这个类。这是创建类模块的一种常见且简单的方法。也就是说，shell 使动态编写代码成为可能，而不是在 Python 代码文件中从头开始编写代码，然后再执行它们(很多人都这样做)。这与 Python 解释器的工作方式非常相似。区别在于 shell 使得直接使用 X DevAPI 成为可能。</p>
+<p>一旦您完善了您的类，您就可以创建适当的代码模块来存储该类。在示例应用程序中，这段代码以类的名称放在数据库文件夹中。例如，<code>Location</code>类存储在名为<code>database/location.py</code>的文件中。清单<a href="#PC21"> 5-17 </a>中显示了<code>Location</code>类的完整代码。</p>
+<pre>class Location(object):
+    """Location class
+
+    This class encapsulates the location view permitting read operations
+    on the data.
+    """
+    def __init__(self, mygarage):
+        """Constructor"""
+        self.mygarage = mygarage
+        self.schema = mygarage.get_db()
+        self.tbl = self.schema.get_table('location')
+
+    def read(self):
+        """Read data from the table"""
+        sql_res = self.tbl.select(LOCATION_READ_COLS).order_by(
+            ∗LOCATION_READ_BRIEF_COLS).execute()
+        return self.mygarage.make_rows(sql_res)
+
+Listing 5-17Completed Location Class Module (database/location.py)
+
+
+</pre>
+<p class="Para" id="Par126">请注意，完整的代码略有不同，我们添加了注释，存储了<code>MyGarage</code>实例，检索了模式(数据库),并将两者都存储在类变量中。也就是说，表的检索分两步完成，而不是链接<code>get_schema()</code>和<code>get_table()</code>方法。这种简化有时会使代码更容易阅读。</p>
+<p class="Para" id="Par127">现在我们已经编写了代码模块，让我们编写一个单元测试来测试这个类。</p>
+
+<h4 class="Heading">测试类</h4>
+<p>我们已经看到了如何测试清单<a href="#PC20"> 5-16 </a>中的类的原型。因此，我们所要做的就是执行那些相同的行，只添加 Location 类的 import 语句。清单<a href="#PC22"> 5-18 </a>显示了这个类的完整测试代码。注意，我们为行的 print 语句添加了<code>[:5]</code>。这将打印限制在列表中的前五个项目(行)。</p>
+<pre>from database.garage_v1 import MyGarage
+from database.location import Location
+mygarage = MyGarage(mysqlx)
+mygarage.connect('root', 'SECRET', 'localhost', 33060)
+location = Location(mygarage)
+rows = location.read()
+print(rows[:5])
+
+Listing 5-18Test Code for the Location Class
+
+
+</pre>
+<p>我们可以将这段代码放在一个文件中并执行它，但是让我们使用 shell 来代替。清单<a href="#PC23"> 5-19 </a>显示了代码在 shell 中的执行。</p>
+<pre>MySQL  Py &gt; from database.garage_v1 import MyGarage
+Running from MySQL Shell. Provide mysqlx in constructor.
+
+MySQL  Py &gt; from database.location import Location
+MySQL  Py &gt; mygarage = MyGarage(mysqlx)
+MySQL  Py &gt; mygarage.connect('root', 'SECRET', 'localhost', 33060)
+MySQL  Py &gt; location = Location(mygarage)
+MySQL  Py &gt; rows = location.read()
+MySQL  Py &gt; print(rows[:5])
+[['Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Bottom'], ['Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Left 1'], ['Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Left 2'], ['Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Left 3'], ['Kobalt 3000 Steel Rolling Tool Cabinet (Black)', 'Drawer', 'Right 1']]
+
+Listing 5-19Executing the Location Class Test Code
+
+
+</pre>
+<p class="Para" id="Par130">如果你认为我们可能想让测试代码更正式、更容易使用，那你就对了。我们将在后面的章节中探讨这一点。但是首先，让我们看看如何为 vendor 表创建类。</p>
+
+
+<h3 class="Heading">供应商类别</h3>
+<p class="Para" id="Par131"><code>Vendor</code>类负责封装<code>vendor</code>表上的创建、读取、更新和删除(CRUD)操作。因此，该类将按名称实现这些方法。事实上，其他类将实现相同的方法。这样，我们在示例应用程序数据库代码中就有了一致性。</p>
+<p class="Para" id="Par132">在这一节中，我们将详细检查<code>Vendor</code>类代码，包括如何使用 shell 构建类，以及如何在 shell 中测试类。现在我们已经看到了一个更小的例子(只有 read 操作)，这个类的代码至少在外观上是熟悉的，但是您将会看到更详细的内容。</p>
+<p class="Para" id="Par133">我们将看到一个详细的演示，展示如何从第一个操作——create 开始，以增量方式(一次一个方法)为类编写代码。我们还将看到测试代码被添加到每个示例中，但是为了简洁起见，我们将只显示为我们关注的方法执行的代码(每个 CRUD 操作)。</p>
+<h4 class="Heading">创造</h4>
+<p class="Para" id="Par134">创建操作是我们在表中创建新行的地方。因此，我们需要提供该行的所有数据。在这种情况下，它包括名称、URL 和源字段。回想一下，这允许我们给供应商一个我们认识的名称(例如，Kobalt，Craftsman)，一个到供应商网站的 URL，以及一个 sources 字段，它是一个描述我们可以为该供应商购买产品的商店的文本字段。</p>
+<p class="Para" id="Par135">像<code>Location</code>类一样，我们需要添加一些指令来开始包含<code>MyGarage</code>类的导入和一个包含列名的列表。该列表纯粹是一种簿记方法，它允许我们更改列或者为不同的 SQL 操作使用替代的列定义。我们将在数据库代码的其他类中更详细地使用这种技术。</p>
+<p class="Para" id="Par136">我们还包括了类定义，就像我们之前做的那样，适当地命名类，并添加一个构造函数方法，该方法接受<code>MyGarage</code>实例，将其存储在类变量中以备后用，获取模式并将其保存到类变量中，最后获取表类实例。</p>
+<p class="Para" id="Par137"><code>create()</code>方法只是以字典的形式接受来自调用者的值，其中列名是键，然后发出<code>insert()</code>方法，通过链接<code>values()</code>方法传入列名和列值的列表。清单<a href="#PC24"> 5-20 </a>显示了<code>Vendor</code>类的初始版本。花点时间通读一下类定义。</p>
+<p>注意在清单的底部是额外的代码来创建一个<code>Vendor</code>类的实例，创建一个测试值字典，然后调用<code>create()</code>方法。最后，我们使用<code>MyGarage</code>方法<code>get_last_insert_id()</code>检索最后一个自动增量值并打印出来。</p>
+<pre>from database.garage_v1 import MyGarage
+VENDOR_COLS_CREATE = ['Name', 'URL', 'Sources']
+class Vendor(object):
+    def __init__(self, myg):
+        self.mygarage = mygarage
+        self.schema = mygarage.get_db()
+        self.tbl = self.schema.get_table('vendor')
+    def create(self, vendor_data):
+        vendor_name = vendor_data.get("Name", None)
+        link = vendor_data.get("URL", None)
+        sources = vendor_data.get("Sources", None)
+        self.tbl.insert(VENDOR_COLS_CREATE).values(
+            vendor_name, link, sources).execute()
+
+mygarage = MyGarage(mysqlx)
+mygarage.connect('root', 'SECRET', 'localhost', 33060)
+vendor = Vendor(mygarage)
+vendor_data = {
+    "Name": "ACME Bolt Company",
+    "URL": "www.acme.org",
+    "Sources": "looney toons"
+}
+
+vendor.create(vendor_data)
+last_id = mygarage.get_last_insert_id()[0]
+
+Listing 5-20Vendor Class create() Method
+
+
+</pre>
+<p class="Para" id="Par139">当我们在 shell 中执行这段代码时，我们将看到每一行代码都经过了验证。不要忘记使用一个上面有空格的空行来分隔类方法，并使用一个上面没有空格的空行来终止类和字典定义。请参阅前面的注释，了解我们为什么需要这样做。</p>
+<p>让我们专注于测试代码。这里，我们简单地创建了一个新行，并检索了它的<code>Id</code>列的值，如下所示(为了简洁起见，省略了演示的其余部分)。</p>
+<pre>...
+MySQL  Py &gt; print("Last insert id = {0}".format(last_id))
+Last insert id = 177
+
+</pre>
+<p class="Para" id="Par141">然而，这不是很多细节，是吗？我们实际上无法判断该行是否被插入——只知道我们获得了最后一个插入 Id。因此，让我们实现读操作并使用它来验证创建。</p>
+
+<h4 class="Heading">阅读</h4>
+<p class="Para" id="Par142">读取操作需要两件事:它需要能够读取表中的所有行并返回它们，就像我们对<code>Location</code>类所做的那样，但是它也需要用于读取单个行并返回该数据。这是因为我们要么读取列表视图的所有行，要么在查看单行时检索该行的值。</p>
+<p class="Para" id="Par143">为此，我们将使用一个名为<code>vendor_id</code>的参数，默认设置为<code>None</code>。这允许我们测试这个参数，如果是<code>None</code>，检索所有行，或者如果有值，检索单个行。</p>
+<p class="Para" id="Par144">读操作还有另一个方面。回想一下 create 操作使用了一个列表来包含列名。在这种情况下，我们不需要<code>Id</code>字段，因为创建操作(插入)将导致 MySQL 填充该值。然而，为了读取一行或所有行，我们需要获取<code>Id</code>列。因此，我们构建了另一个列表来为 select()方法调用添加 Id 列。</p>
+<p>让我们也添加一些错误处理代码。在这种情况下，我们将使用一个<code>try…except</code>块来捕捉在<code>insert()</code>和<code>select()</code>期间的任何错误。我们还添加了一项技术来返回一个布尔值，告诉调用者操作是否有效，如果无效，则向用户显示一条错误消息。我们通过返回一个元组来做到这一点，比如<code>(True, None)</code>表示成功，或者<code>(False, &lt;error&gt;)</code>表示错误。这将有助于我们以后如果有问题。清单<a href="#PC26"> 5-21 </a>显示了添加了<code>read()</code>方法并更新了测试代码的类。</p>
+<pre>from database.garage_v1 import MyGarage
+VENDOR_COLS_CREATE = ['Name', 'URL', 'Sources']
+VENDOR_COLS = []
+VENDOR_COLS.extend(VENDOR_COLS_CREATE)
+VENDOR_COLS.insert(0, 'Id') # Add the Id to the list
+class Vendor(object):
+    def __init__(self, mygarage):
+        self.mygarage = mygarage
+        self.schema = mygarage.get_db()
+        self.tbl = self.schema.get_table('vendor')
+
+    def create(self, vendor_data):
+        vendor_name = vendor_data.get("Name", None)
+        link = vendor_data.get("URL", None)
+        sources = vendor_data.get("Sources", None)
+        assert vendor_name, "You must supply a name for the vendor."
+        try:
+            self.tbl.insert(VENDOR_COLS_CREATE).values(
+                vendor_name, link, sources).execute()
+        except Exception as err:
+            print("ERROR: Cannot add vendor: {0}".format(err))
+            return (False, err)
+        return (True, None)
+
+
+
+
+
+
+
+    def read(self, vendor_id=None):
+        if not vendor_id:
+            # return all vendors
+            sql_res = self.tbl.select(VENDOR_COLS).order_by("Name").execute()
+        else:
+            # return specific vendor
+            sql_res = self.tbl.select(VENDOR_COLS).where(
+                "Id = '{0}'".format(vendor_id)).execute()
+        return self.mygarage.make_rows(sql_res)
+
+mygarage = MyGarage(mysqlx)
+mygarage.connect('root', 'SECRET', 'localhost', 33060)
+vendor = Vendor(mygarage)
+vendor_data = {
+    "Name": "ACME Bolt Company",
+    "URL": "www.acme.org",
+    "Sources": "looney toons"
+}
+
+vendor.create(vendor_data)
+last_id = mygarage.get_last_insert_id()[0]
+print("Last insert id = {0}".format(last_id))
+rows = vendor.read(last_id)
+print("{0}".format(", ".join(rows[0])))
+rows = vendor.read()
+print(rows[:5])
+
+
+
+
+
+Listing 5-21Adding the read() Method
+
+
+</pre>
+<p>注意，为了简洁，最后一行代码只打印了返回的前五行。像以前一样，我们将省略该类的条目，并将重点放在测试该类的行上。下面显示了为测试<code>create()</code>和<code>read()</code>方法而执行的代码行。我们通过使用在<code>create()</code>之后返回的最后一个 Id 来测试读取单个行，然后执行一个<code>read()</code>来获取所有行。</p>
+<pre>...
+MySQL  Py &gt; print("Last insert id = {0}".format(last_id))
+Last insert id = 178
+MySQL  Py &gt; rows = vendor.read(last_id)
+MySQL  Py &gt; print("{0}".format(", ".join(rows[0])))
+178, ACME Bolt Company, www.acme.org, looney toons
+MySQL  Py &gt; rows = vendor.read()
+MySQL  Py &gt; print(rows[:5])
+[['178', 'ACME Bolt Company', 'www.acme.org', 'looney toons'], ['175', 'ACME Bolt Company', 'www.acme.org', 'looney toons'], ['172', 'ACME Bolt Company', 'www.acme.org', 'looney toons'], ['171', 'ACME Bolt Company', 'www.acme.org', 'looney toons'], ['170', 'ACME Bolt Company', 'www.acme.org', 'looney toons']]
+
+</pre>
+<p class="Para" id="Par147">同样，这些行的打印并不漂亮，但出于开发目的，它确实显示了<code>create()</code>和<code>read()</code>正在工作。酷！现在，让我们添加更新操作。</p>
+
+<h4 class="Heading">更新</h4>
+<p class="Para" id="Par148">更新操作类似于创建操作，因为我们需要该行的所有数据。但是与创建操作不同，我们需要<code>Id</code>列，以便更新正确的行。精明的开发人员会在发布更新之前添加一个验证列的步骤，以便只更新那些发生变化的列，但是我们将采用一种更简单的方法，提供所有的列，并让数据库进行排序。</p>
+<p class="Para" id="Par149">然而，由于更新操作必须有<code>Id</code>列，我们将添加一个断言来确保调用者为<code>where()</code>方法提供该信息。否则，更新就太危险了！</p>
+<p>我们还在<code>update()</code>周围使用了一个<code>try...except</code>块来捕捉任何错误。清单<a href="#PC28"> 5-22 </a>显示了添加了<code>update()</code>方法的类，为了简洁起见，省略了构造函数、<code>create()</code>和<code>read()</code>方法。注意我们如何使用一个<code>for</code>循环来设置列的值。</p>
+<pre>from database.garage_v1 import MyGarage
+VENDOR_COLS_CREATE = ['Name', 'URL', 'Sources']
+VENDOR_COLS = []
+VENDOR_COLS.extend(VENDOR_COLS_CREATE)
+VENDOR_COLS.insert(0, 'Id') # Add the Id to the list
+class Vendor(object):
+...
+    def update(self, vendor_data):
+        vendor_id = vendor_data.get("VendorId", None)
+        vendor_name = vendor_data.get("Name", None)
+        link = vendor_data.get("URL", None)
+        sources = vendor_data.get("Sources", None)
+        assert vendor_id, "You must supply an Id to update the vendor."
+        field_value_list = [('Name', vendor_name),
+                            ('URL', link), ('Sources', sources)]
+        try:
+            tbl_update = self.tbl.update()
+            for field_value in field_value_list:
+                tbl_update.set(field_value[0], field_value[1])
+            tbl_update.where("Id = '{0}'".format(vendor_id)).execute()
+        except Exception as err:
+            print("ERROR: Cannot update vendor: {0}".format(err))
+            return (False, err)
+        return (True, None)
+
+mygarage = MyGarage(mysqlx)
+mygarage.connect('root', 'SECRET', 'localhost', 33060)
+vendor = Vendor(mygarage)
+vendor_data = {
+    "Name": "ACME Bolt Company",
+    "URL": "www.acme.org",
+    "Sources": "looney toons"
+}
+vendor.create(vendor_data)
+last_id = mygarage.get_last_insert_id()[0]
+print("Last insert id = {0}".format(last_id))
+rows = vendor.read(last_id)
+print("{0}".format(", ".join(rows[0])))
+rows = vendor.read()
+print(rows[:5])
+vendor_data = {
+    "VendorId": last_id,
+    "Name": "ACME Nut Company",
+    "URL": "www.acme.org",
+    "Sources": "looney toons"
+}
+vendor.update(vendor_data)
+rows = vendor.read(last_id)
+print("{0}".format(", ".join(rows[0])))
+
+
+
+Listing 5-22Adding the update() Method
+
+
+</pre>
+<p>更新操作的测试代码简单地使用与创建操作相同的字典，只是我们更改了一些值来测试更新。下面显示了从创建操作后的读取开始的测试执行的输出。注意 update()确实改变了我们之前创建的那一行的值。</p>
+<pre>...
+MySQL  Py &gt; rows = vendor.read(last_id)
+MySQL  Py &gt; print("{0}".format(", ".join(rows[0])))
+179, ACME Bolt Company, www.acme.org, looney toons
+MySQL  Py &gt; rows = vendor.read()
+...
+MySQL  Py &gt; vendor_data = {
+          -&gt;     "VendorId": last_id,
+          -&gt;     "Name": "ACME Nut Company",
+          -&gt;     "URL": "www.acme.org",
+          -&gt;     "Sources": "looney toons"
+          -&gt; }
+MySQL  Py &gt; vendor.update(vendor_data)
+MySQL  Py &gt; rows = vendor.read(last_id)
+MySQL  Py &gt; print("{0}".format(", ".join(rows[0])))
+179, ACME Nut Company, www.acme.org, looney toons
+
+</pre>
+<p class="Para" id="Par152">现在，让我们添加最后一个操作—删除。</p>
+
+<h4 class="Heading">删除</h4>
+<p class="Para" id="Par153">删除操作只是删除表中的一行。我们需要做的就是 Id 列。因此，<code>delete()</code>方法被编写为使用<code>vendor_id</code>作为参数测试，以确保提供了一个参数，然后在表上发出删除操作。</p>
+<p>像其他方法一样，我们使用<code>try…except</code>块并返回一个元组来报告操作是否成功。清单<a href="#PC30"> 5-23 </a>显示了添加了<code>delete()</code>方法的类，为了简洁起见，省略了构造函数、<code>create()</code>、<code>read()</code>和<code>update()</code>方法。</p>
+<pre>from database.garage_v1 import MyGarage
+VENDOR_COLS_CREATE = ['Name', 'URL', 'Sources']
+VENDOR_COLS = []
+VENDOR_COLS.extend(VENDOR_COLS_CREATE)
+VENDOR_COLS.insert(0, 'Id') # Add the Id to the list
+class Vendor(object):
+...
+    def delete(self, vendor_id=None):
+        """Delete a row from the table"""
+        assert vendor_id, "You must supply an Id to delete the vendor."
+        try:
+            self.tbl.delete().where("Id = '{0}'".format(vendor_id)).execute()
+        except Exception as err:
+            print("ERROR: Cannot delete vendor: {0}".format(err))
+            return (False, err)
+        return (True, None)
+
+mygarage = MyGarage(mysqlx)
+mygarage.connect('root', 'secret', 'localhost', 33060)
+vendor = Vendor(mygarage)
+vendor_data = {
+    "Name": "ACME Bolt Company",
+    "URL": "www.acme.org",
+    "Sources": "looney toons"
+}
+vendor.create(vendor_data)
+last_id = mygarage.get_last_insert_id()[0]
+print("Last insert id = {0}".format(last_id))
+rows = vendor.read(last_id)
+print("{0}".format(", ".join(rows[0])))
+rows = vendor.read()
+print(rows[:5])
+vendor_data = {
+    "VendorId": last_id,
+    "Name": "ACME Nut Company",
+    "URL": "www.acme.org",
+    "Sources": "looney toons"
+}
+vendor.update(vendor_data)
+rows = vendor.read(last_id)
+print("{0}".format(", ".join(rows[0])))
+vendor.delete(last_id)
+rows = vendor.read(last_id)
+if not rows:
+    print("Record not found.")
+
+
+
+Listing 5-23Adding the delete() Method
+
+
+</pre>
+<p>好了，这就是这个类的完整代码。下面显示了调用<code>update()</code>后的执行。在这里，我们尝试删除我们插入并稍后更新的行，然后尝试从表中读取它。如果没有返回行，则没有找到该行，因此我们显示删除操作成功。</p>
+<pre>...
+MySQL  Py &gt; rows = vendor.read(last_id)
+MySQL  Py &gt; print("{0}".format(", ".join(rows[0])))
+180, ACME Nut Company, www.acme.org, looney toons
+MySQL  Py &gt; vendor.delete(last_id)
+MySQL  Py &gt; rows = vendor.read(last_id)
+MySQL  Py &gt; if not rows:
+          -&gt;     print("Record not found.")
+Record not found.
+
+</pre>
+<p class="Para" id="Par156">既然我们已经详细了解了如何使用 shell 来创建数据库表(和视图)的类，那么让我们来看看其余每个类的概述。每个类都以与<code>Vendor</code>类相同的方式编写，并注明了该类的具体实现细节。正如你将看到的，一致性是我们的朋友。</p>
+
+
+<h3 class="Heading">手工工具类</h3>
+<p class="Para" id="Par157"><code>Handtool</code>类封装了<code>handtool</code>表的 CRUD 操作。它使用与其他类相同的类结构和方法。它在复杂性上与<code>Vendor</code>类有三个主要的不同。</p>
+<p>首先，<code>handtool</code>表有几个不能为空的字段，所以插入和更新操作有一些额外的断言，如下所示。</p>
+<pre>assert tool_size, "You must specify a toolsize for the handtool."
+assert handtool_type, "You must specify a type for the handtool."
+assert description, "You must supply a description for the handtool."
+assert place_id, "You must supply an Id for the handtool."
+
+</pre>
+<p>其次，该表有一个枚举字段，我们用代码中的另一个列表来表示它，如下所示。这允许我们将名称映射到枚举值。这可能看起来很奇怪，因为这是一个值重复的元组列表。那是故意的。映射可以这样定义，这样键(元组中的第一个值)就被用来“映射”到第二个值(或者只是值)。因为我们是优秀的数据库开发人员，我们不为枚举的字段值编码数值，我们必须重复该值。</p>
+<pre>HANDTOOL_TYPES = [
+    ('Adjustable Wrench', 'Adjustable Wrench'), ('Awl', 'Awl'),
+    ('Clamp', 'Clamp'), ('Crowbar', 'Crowbar'), ('Drill Bit', 'Drill Bit'),
+    ('File', 'File'), ('Hammer', 'Hammer'), ('Knife', 'Knife'), ('Level', 'Level'),
+    ('Nutdriver', 'Nutdriver'), ('Pliers', 'Pliers'), ('Prybar', 'Prybar'),
+    ('Router Bit', 'Router Bit'), ('Ruler', 'Ruler'), ('Saw', 'Saw'),
+    ('Screwdriver', 'Screwdriver'), ('Socket', 'Socket'),
+    ('Socket Wrench', 'Socket Wrench'), ('Wrench', 'Wrench'),
+]
+
+</pre>
+<p>第三，因为<code>handtool</code>表有几个字段，所以用于查找或浏览操作的表中的行列表不需要所有的字段。我们也希望看到外键所指向的值。因此，我们使用如下所示的 SQL <code>SELECT</code>查询来代替<code>read()</code>方法的 read all rows 特性。我们将它存储在一个常量中，以便于阅读和修改。</p>
+<pre>HANDTOOL_READ_LIST = (
+    "SELECT handtool.Id, handtool.type, handtool.description, "
+    "handtool.toolsize, storage.description as StorageEquipment, "
+    "place.type as locationtype, place.description as location FROM garage_v1.handtool "
+    "JOIN garage_v1.place ON "
+    "handtool.placeid = place.id JOIN garage_v1.storage ON place.storageid = storage.id "
+    "ORDER BY handtool.type, handtool.description"
+)
+
+</pre>
+<p>该查询用于读取操作，如下所示。注意，我们使用会话对象的 sql()方法，而不是 select()方法来发出查询。因此，我们还在构造函数中捕获会话对象实例。</p>
+<pre>if not handtool_id:
+    # return all handtools - uses a JOIN so we have to use the sql()
+    # method instead of select, but we arrive at the same results
+    sql_res = self.session.sql(HANDTOOL_READ_LIST).execute()
+    return self.mygarage.make_rows_sql(sql_res, len(HANDTOOL_READ_COLS))
+else:
+    # return specific handtool
+    sql_res = self.tbl.select(HANDTOOL_COLS).where(
+        "Id = '{0}'".format(handtool_id)).execute()
+return self.mygarage.make_rows(sql_res)
+
+</pre>
+<p class="Para" id="Par162">你可以在<code>database/handtool.py</code>代码模块中找到这个代码。花一些时间来研究这些变化，亲自看看它们是如何结合在一起的。</p>
+
+<h3 class="Heading">组织者类</h3>
+<p><code>Organizer</code>类封装了<code>organizer</code>表的 CRUD 操作。它使用与其他类相同的类结构和方法。它在复杂程度上不同于<code>Vendor</code>级，比如<code>Handtool</code>级；它需要枚举列的映射和读取操作的 SQL <code>SELECT</code>语句，如下所示。否则，代码与<code>Vendor</code>类的模式相同。</p>
+<pre>ORGANIZER_TYPES = [('Bin', 'Bin'), ('Box', 'Box'), ('Case', 'Case')]
+...
+ORGANIZER_READ_LIST = (
+    "SELECT organizer.Id, organizer.Type, organizer.Description, "
+    "storage.description as StorageEquipment, place.type as LocationType, "
+    "place.description as Location FROM  garage_v1.organizer JOIN "
+    "garage_v1.place ON organizer.placeid = place.ID  JOIN "
+    "garage_v1.storage ON place.storageid = storage.id "
+    "ORDER BY Type, organizer.description"
+)
+
+</pre>
+
+<h3 class="Heading">处级</h3>
+<p><code>Place</code>类封装了<code>place</code>表的 CRUD 操作。它使用与其他类相同的类结构和方法。它在复杂程度上不同于<code>Vendor</code>级，比如<code>Handtool</code>级；它需要枚举列的映射和读取操作的 SQL <code>SELECT</code>语句，如下所示。否则，代码与<code>Vendor</code>类的模式相同。</p>
+<pre>PLACE_TYPES = [('Drawer', 'Drawer'), ('Shelf', 'Shelf')]
+...
+PLACE_READ_LIST = (
+    "SELECT place.Id, storage.description as StorageEquipment, place.Type as LocationType, "
+    "place.Description as Location FROM garage_v1.place JOIN "
+    "garage_v1.storage ON place.StorageId = storage.ID ORDER BY "
+    "StorageEquipment, LocationType, Location"
+)
+
+</pre>
+
+<h3 class="Heading">电动工具类</h3>
+<p><code>Powertool</code>类封装了<code>powertool</code>表的 CRUD 操作。它使用与其他类相同的类结构和方法。它在复杂程度上不同于<code>Vendor</code>级，比如<code>Handtool</code>级；它需要枚举列的映射和读取操作的 SQL <code>SELECT</code>语句，如下所示。否则，代码与<code>Vendor</code>类的模式相同。</p>
+<pre>POWERTOOL_TYPES = [('Corded', 'Corded'), ('Cordless', 'Cordless'), ('Air', 'Air')]
+...
+POWERTOOL_READ_LIST = (
+    "SELECT powertool.Id, powertool.type, powertool.description, "
+    "storage.description as StorageEquipment, place.type as locationtype, "
+    "place.description as location FROM garage_v1.powertool JOIN garage_v1.place "
+    "ON powertool.placeid = place.id JOIN garage_v1.storage ON "
+    "place.storageid = storage.id ORDER BY powertool.type, powertool.description"
+)
+
+</pre>
+
+<h3 class="Heading">存储类</h3>
+<p><code>Storage</code>类封装了<code>storage</code>表的 CRUD 操作。它使用与其他类相同的类结构和方法。它在复杂程度上不同于<code>Vendor</code>级，比如<code>Handtool</code>级；它需要枚举列的映射和读取操作的 SQL <code>SELECT</code>语句，如下所示。它在返回所有行的读操作上也有所不同，返回一个较小的列列表。这用于在用户界面中显示所有的存储设备。否则，代码与<code>Vendor</code>类的模式相同。</p>
+<pre>STORAGE_TYPES = [
+    ('Cabinet', 'Cabinet'), ('Shelving', 'Shelving'),
+    ('Toolchest', 'Toolchest'), ('Workbench', 'Workbench')
+]
+STORAGE_COLS_BRIEF = [
+    'storage.Id', 'Type', 'Description', 'Location'
+]
+...
+STORAGE_READ_LIST = (
+   "SELECT storage.Id, vendor.name, Type, description, Location FROM "
+   "garage_v1.storage JOIN garage_v1.vendor ON storage.VendorId = vendor.Id "
+   "ORDER BY Type, Location"
+)
+
+
+
+</pre>
+
+<h3 class="Heading">测试类模块</h3>
+<p class="Para" id="Par167">开发人员工具箱中的一个工具是一组强大的测试。既然我们已经看到了如何在 shell 中创建数据库类，那么现在让我们看看如何开发一个测试框架来测试数据库类。</p>
+<p class="Para" id="Par168">回想一下，这些类的测试使用了非常相似的机制，并且实际上遵循了相同的步骤序列。每当开发人员看到这一点，他们就会想到“自动化”和“类”也就是说，很容易创建一个包含所有步骤和子类的基类，这些步骤和子类实现了特定于被测试类的类(test)。这是实现可重复测试的一种非常常见的方式。</p>
+<p>在这种情况下，我们在<code>unittests/crud_test.py</code>代码模块中创建了一个名为<code>CRUDTest</code>的基类，它实现了启动(或设置)测试的方法，一个显示返回行的通用方法，以及一个我们想要运行的测试用例。表<a href="#Tab3"> 5-3 </a>显示了类中实现的方法。</p>
+<p>表 5-3</p><p class="SimplePara">CRUDTest 类方法</p>
+
+
+<table style="border-collapse: collapse;border-top: 0.5pt solid ; border-bottom: 0.5pt solid ; border-left: 0.5pt solid ; border-right: 0.5pt solid ; "><colgroup><col class="tcol1 align-left"/>
+<col class="tcol2 align-left"/>
+<col class="tcol3 align-left"/>
+</colgroup>
+<thead><tr><th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">方法</p>
+</th>
+<th style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">因素</p>
+</th>
+<th style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">描述</p>
+</th>
+</tr>
+</thead>
+<tbody><tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>__init__()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">构造器</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>begin()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">mysqlx 实例，类名，用户名，密码</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">连接到 MySQL 服务器并设置 MyGarage 类。由 setup()方法调用</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>show_rows()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">行数(列表)，要显示的行数</p>
+</td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">打印列表中的行，直到指定的数目</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>set_up()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">设置测试并初始化测试用例。每个类的覆盖</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>create()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">运行创建测试用例。每个类的覆盖</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>read_all()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">运行读取测试用例以返回所有行。每个类的覆盖</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>read_one()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">运行读取测试用例以返回特定的行。每个类的覆盖</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>update()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">运行更新测试用例。每个类的覆盖</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>delete()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; border-bottom: 0.5pt solid ; text-align: left;"> </td>
+<td style="border-bottom: 0.5pt solid ; text-align: left;"><p class="SimplePara">运行删除测试用例。每个类的覆盖</p>
+</td>
+</tr>
+<tr><td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><code>tear_down()</code></p>
+</td>
+<td style="border-right: 0.5pt solid ; text-align: left;"> </td>
+<td style="text-align: left;"><p class="SimplePara">关闭测试并断开与服务器的连接</p>
+</td>
+</tr>
+</tbody>
+</table>
+
+<p>这看起来工作量很大，但是让我们先看看这个类，然后看一个例子，看看我们如何从它派生出一个数据库类来创建一个测试。清单<a href="#PC40"> 5-24 </a>显示了<code>CRUDTest</code>类的代码。</p>
+<pre>from __future__ import print_function
+from getpass import getpass
+from database.garage_v1 import MyGarage
+class CRUDTest(object):
+    """Base class for Unit testing table/view classes."""
+
+    def __init__(self):
+        """Constructor"""
+        self.mygarage = None
+
+    def __begin(self, mysql_x, class_name, user=None, passwd=None):
+        """Start the tests"""
+        print("\n∗∗∗ {0} Class Unit test ∗∗∗\n".format(class_name))
+        self.mygarage = MyGarage(mysql_x)
+        if not user:
+            user = raw_input("User: ")
+        if not passwd:
+            passwd = getpass("Password: ")
+        print("Connecting...")
+        self.mygarage.connect(user, passwd, 'localhost', 33060)
+        return self.mygarage
+
+
+
+
+
+
+    @staticmethod
+    def show_rows(rows, num_rows):
+        """Display N rows from row result"""
+        print("\n\tFirst {0} rows:".format(num_rows))
+        print("\t--------------------------")
+        for item in range(0, num_rows):
+            print("\t{0}".format(", ".join(rows[item])))
+
+    def set_up(self, mysql_x, user=None, passwd=None):
+        """Setup functions"""
+        pass
+
+    def create(self):
+        """Run Create test case"""
+        pass
+
+    def read_all(self):
+        """Run Read(all) test case"""
+        pass
+
+    def read_one(self):
+        """Run Read(record) test case"""
+        pass
+
+    def udpate(self):
+        """Run Update test case"""
+        pass
+
+    def delete(self):
+        """Run Delete test case"""
+        pass
+
+    def tear_down(self):
+        """Tear down functions"""
+        print("\nDisconnecting...")
+        self.mygarage.disconnect()
+
+
+
+
+Listing 5-24Code for the CRUDTest Class
+
+
+</pre>
+<p class="Para" id="Par171">注意，我们在基类中执行初始化、设置和拆卸步骤。这样，我们可以确保对每个类都以相同的方式执行这些步骤。</p>
+<p class="Para" id="Par172">还要注意，我们要覆盖的方法是以“pass”作为主体列出的。这本质上是一个“什么都不做”但合法的方法体。我们将在用于为数据库类创建测试的类中编写每个方法的细节。</p>
+<p>例如，我们通过创建一个名为<code>VendorTests</code>的新类来迁移我们对 Vendor 类的测试，这个新类是从<code>CRUDTest</code>派生的，并存储在文件<code>unittests/vendor_test.py</code>中。清单<a href="#PC41"> 5-25 </a>显示了新类的代码。</p>
+<pre>from __future__ import print_function
+
+from unittests.crud_test import CRUDTest
+from database.vendor import Vendor
+
+class VendorTests(CRUDTest):
+    """Test cases for the Vendor class"""
+
+    def __init__(self):
+        """Constructor"""
+        CRUDTest.__init__(self)
+        self.vendor = None
+        self.last_id = None
+
+    def set_up(self, mysql_x, user=None, passwd=None):
+        """Setup the test cases"""
+        self.mygarage = self.begin(mysql_x, "Vendor", user, passwd)
+        self.vendor = Vendor(self.mygarage)
+
+    def create(self):
+        """Run Create test case"""
+        print("\nCRUD: Create test case")
+        vendor_data = {
+            "Name": "ACME Bolt Company",
+            "URL": "www.acme.org",
+            "Sources": "looney toons"
+        }
+        self.vendor.create(vendor_data)
+        self.last_id = self.mygarage.get_last_insert_id()[0]
+        print("\tLast insert id = {0}".format(self.last_id))
+
+    def read_all(self):
+        """Run Read(all) test case"""
+        print("\nCRUD: Read (all) test case")
+        rows = self.vendor.read()
+        self.show_rows(rows, 5)
+
+    def read_one(self):
+        """Run Read(record) test case"""
+        print("\nCRUD: Read (row) test case")
+        rows = self.vendor.read(self.last_id)
+        print("\t{0}".format(", ".join(rows[0])))
+
+    def update(self):
+        """Run Update test case"""
+        print("\nCRUD: Update test case")
+        vendor_data = {
+            "VendorId": self.last_id,
+            "Name": "ACME Nut Company",
+            "URL": "www.acme.org",
+            "Sources": "looney toons"
+        }
+        self.vendor.update(vendor_data)
+
+
+
+
+
+
+    def delete(self):
+        """Run Delete test case"""
+        print("\nCRUD: Delete test case")
+        self.vendor.delete(self.last_id)
+        rows = self.vendor.read(self.last_id)
+        if not rows:
+            print("\tNot found (deleted).")
+
+Listing 5-25Code for the VendorTests Class
+
+
+</pre>
+<p>这项技术的强大之处在于，我们可以继续为每个以类命名的数据库类创建新的测试，并将它们存储在同一个<code>unittests</code>文件夹中。然后我们可以编写一个驱动脚本，在一个循环中运行所有的测试。由于 Location 类只有一个 read all 操作，我们可以为其他操作编写“no operation ”,这允许我们在循环中包含<code>LocationTests</code>。清单<a href="#PC42"> 5-26 </a>显示了名为<code>run_all.py</code>的驱动脚本的代码，也存储在<code>unittests</code>文件夹中。</p>
+<pre>from __future__ import print_function
+from getpass import getpass
+from unittests.handtool_test import HandtoolTests
+from unittests.location_test import LocationTests
+from unittests.organizer_test import OrganizerTests
+from unittests.place_test import PlaceTests
+from unittests.powertool_test import PowertoolTests
+from unittests.storage_test import StorageTests
+from unittests.vendor_test import VendorTests
+print("CRUD Tests for all classes...")
+crud_tests = []
+handtool = HandtoolTests()
+crud_tests.append(handtool)
+location = LocationTests()
+crud_tests.append(location)
+organizer = OrganizerTests()
+crud_tests.append(organizer)
+place = PlaceTests()
+crud_tests.append(place)
+powertool = PowertoolTests()
+crud_tests.append(powertool)
+storage = StorageTests()
+crud_tests.append(storage)
+vendor = VendorTests()
+crud_tests.append(vendor)
+# Get user, passwd
+user = raw_input("User: ")
+passwd = getpass("Password: ")
+# Run the CRUD operations for all classes that support them
+for test in crud_tests:
+    test.set_up(mysqlx, user, passwd)
+    test.create()
+    test.read_one()
+    test.read_all()
+    test.update()
+    test.read_one()
+    test.delete()
+    test.tear_down()
+
+
+
+
+Listing 5-26Test Driver run_all.py
+
+
+</pre>
+<p>要执行这个测试，您可以使用清单<a href="#PC43"> 5-27 </a>中所示的命令以及预期的输出。这里，为了简洁起见，我们只看到输出的一部分。</p>
+<pre>C:\Users\cbell\Documents\mygarage_v1&gt;mysqlsh --py -f unittests/run_all.py
+Running from MySQL Shell. Provide mysqlx in constructor.
+CRUD Tests for all classes...
+User: root
+Password:
+∗∗∗ Handtool Class Unit test ∗∗∗
+Connecting...
+CRUD: Create test case
+        Last insert id = 2267
+CRUD: Read (row) test case
+        2267, 101, Plumpbus, Hammer, medium, 1001
+CRUD: Read (all) test case
+        First 5 rows:
+        --------------------------
+        2050, Awl, Alloy Steel Scratch, 6-in, Kobalt 3000 Steel Rolling Tool Cabinet (Black), Drawer, Left 3
+        2048, Awl, Complex Hook, 3-in, Kobalt 3000 Steel Rolling Tool Cabinet (Black), Drawer, Left 3
+        2049, Awl, Curved Hook, 3-in, Kobalt 3000 Steel Rolling Tool Cabinet (Black), Drawer, Left 3
+        2047, Awl, Hook, 3-in, Kobalt 3000 Steel Rolling Tool Cabinet (Black), Drawer, Left 3
+        2046, Awl, Scratch, 3-in, Kobalt 3000 Steel Rolling Tool Cabinet (Black), Drawer, Left 3
+CRUD: Update test case
+CRUD: Read (row) test case
+        2267, 101, Plumpbus Pro, Screwdriver, grande, 1001
+CRUD: Delete test case
+        Not found (deleted).
+Disconnecting...
+∗∗∗ Location Class Unit test ∗∗∗
+Connecting...
+CRUD: Create test case (SKIPPED)
+CRUD: Read (row) test case (SKIPPED)
+CRUD: Read (all) test case
+        First 5 rows:
+        --------------------------
+        1007, Kobalt 3000 Steel Rolling Tool Cabinet (Black), Drawer, Bottom
+        1001, Kobalt 3000 Steel Rolling Tool Cabinet (Black), Drawer, Left 1
+        1002, Kobalt 3000 Steel Rolling Tool Cabinet (Black), Drawer, Left 2
+        1003, Kobalt 3000 Steel Rolling Tool Cabinet (Black), Drawer, Left 3
+        1004, Kobalt 3000 Steel Rolling Tool Cabinet (Black), Drawer, Right 1
+CRUD: Update test case (SKIPPED)
+CRUD: Read (row) test case (SKIPPED)
+CRUD: Delete test case (SKIPPED)
+...
+
+Listing 5-27Executing the Test Driver
+
+
+</pre>
+<p class="Para" id="Par176">花些时间从书籍网站下载代码，并自己测试单元测试。您应该注意到使用这个概念非常容易，并且您可以开发其他类似的概念来测试您的数据库代码。只是觉得；我们无需编写任何用户界面代码就可以做到这一点，这允许在编写第一行用户界面代码之前验证我们的数据库代码。很好！</p>
+
+
+<h2 class="Heading">摘要</h2>
+<p class="Para" id="Par177">起初，有些人可能会怀疑 MySQL Shell 可以用作开发工具的说法。这可能部分是因为它是新的，部分是因为它不是一个典型的代码编辑器；相反，它更像是 Python 解释器。</p>
+<p class="Para" id="Par178">但是，您已经亲眼看到了如何使用 shell 来测试代码，以了解哪些方法有效以及如何使用 X DevAPI，而且您还看到了在 shell 中编写代码并执行代码是多么容易。</p>
+<p class="Para" id="Par179">事实上，我们通过演示如何在没有用户界面支持的情况下用 Python 开发和测试数据库代码模块，进一步提升了这一点。这对开发人员来说是一个巨大的好处，因为它经常被留到最后来测试像数据库类这样的模块。这样，我们在编写用户界面之前测试数据库代码，从而允许我们一次只关注应用程序的一部分。</p>
+<p class="Para" id="Par180">在下一章中，我们将继续我们在 X DevAPI 中使用 shell 的旅程，深入了解如何使用 MySQL 文档存储——一种全新的、非 SQL (NOSQL)的数据处理方式。</p>
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par35">例如，我选择单数形式的对象(表)名称，而有些人更喜欢复数形式。习惯上使用单数名称，但有些人可能会争论这个问题，以至于出现问题。对我们大多数人来说那只是噪音。</p>
+
+ 
+
+<a href="#Fn2_source">2</a><p class="Para" id="Par39">在我职业生涯的某个阶段，我也是其中之一。随着我获得越来越多的经验，我开始意识到如果谨慎和安全地使用，一些权衡确实是有益的。</p>
+
+ 
+
+<a href="#Fn3_source">3</a><p class="Para" id="Par55">关系数据库纯粹主义者的另一个“罪过”。嘿，这是常有的事。</p>
+
+ 
+
+<a href="#Fn4_source">4</a><p class="Para" id="Par58">欢迎你这么做！</p>
+
+ 
+
+<a href="#Fn5_source">5</a><p class="Para" id="Par108">这些不是 Python 中使用单元测试框架(<a href="https://docs.python.org/2/library/unit"> <code>https://docs.python.org/2/library/unit</code> </a> test.html)可用的单元测试。相反，它们是单元测试，因为它们测试应用程序的各个部分(<a href="https://en.wikipedia.org/wiki/Unit_testing"> <code>https://en.wikipedia.org/wiki/Unit_testing</code> </a>)。</p>
+
+ 
+
+</aside>
+
+</body>
+</html>

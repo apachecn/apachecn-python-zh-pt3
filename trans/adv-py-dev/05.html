@@ -1,0 +1,1539 @@
+<html lang="en">
+<head><title>Alternative interfaces</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body>
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">5.替代接口</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">我们有一个命令行工具来报告服务器上各种数据收集功能的结果，但是能够连接到服务器并运行命令行工具来检查它们的当前状态并不是监控大量数据收集系统的可持续方式。我们不想记下多次命令行工具调用的结果，并手动分析它们。最好能够自动收集信息，并能够分析原始值，而不是我们向用户显示的格式化结果。</p>
+<p class="Para" id="Par3">我们可以创建一个简单的基于 HTTP 的 web 服务器，它返回传感器的值来响应 API 调用，而不是编写一个程序通过 SSH 依次连接到每个服务器并调用命令行工具。为此，我们必须为相同的传感器创建一个新的接口。</p>
+<h2 class="Heading">Web 微服务</h2>
+<p class="Para" id="Par4">在过去的几年中，有一种趋势是通过松散耦合许多服务来创建 web 应用程序，每个服务执行一个特定的任务。这种架构牺牲了统一代码库的便利性，换取了独立开发每个组件的灵活性。有些 web 框架比其他框架更适合这类问题——有些是专门为这一领域开发的。</p>
+<p class="Para" id="Par5">有很多 Python web 框架，比如 Django、Pyramid、Flask 和 Bottle，它们都可以作为 API 服务器的基础。Django 和 Pyramid 都是复杂 web 应用程序的绝佳选择，它们提供了许多内置特性，如翻译、会话管理和数据库事务管理。其他的，像烧瓶和瓶子，要小得多。他们有少量的依赖项，并擅长作为微服务的基础。</p>
+<p class="Para" id="Par6">我们需要一个非常简单的 API 服务器，没有任何为人类设计的界面。不需要 HTML 模板、导航系统或者 CSS 和 Javascript 管理。为微服务设计的 Web 框架非常适合非常小的 API 服务器。</p>
+<h3 class="Heading">WSGI(消歧义)</h3>
+<p class="Para" id="Par7">所有 Python web 框架都使用一种标准来创建通过 HTTP 提供服务的应用程序，这种标准称为 web 服务器网关接口，简称 WSGI。WSGI 是一个简单的 API，我们可以直接使用它来编写向 Web 公开的函数。</p>
+<p class="Para" id="Par8">WSGI 应用程序是一个 Python 可调用程序，它接受两个参数。第一个是表示环境的字典(它包含各种 HTTP 头和服务器信息，比如客户机的远程地址)，第二个是<code>start_response(...)</code>函数，它期望 HTTP 状态代码是一个字符串，响应头的 iterable 是两个字符串元组。</p>
+<p>Python 标准库包括一个简单的 WSGI 服务器，用于测试 WSGI 应用程序。对于用于生产代码来说，它还不够好，但是对于开发来说却很方便。它是从<code>wsgiref.simple_server</code>模块导入的，其中<code>make_server(...)</code>上下文管理器接受主机和端口绑定参数以及要服务的函数。得到的上下文对象有一个<code>serve_forever()</code>方法来运行 HTTP 服务器，直到被<code>&lt;CTRL+c&gt;</code>中断，还有一个<code>handle_request()</code>方法来响应单个请求。使用 wsgiref 服务器运行一个演示，Hello World 网站如清单<a href="#PC1"> 5-1 </a>所示。</p>
+<pre>import wsgiref.simple_server
+
+def hello_world(environ, start_response):
+    headers = [
+        ("Content-type", "text/plain; charset=utf-8"),
+        ("Content-Security-Policy", "default-src 'none';"),
+    ]
+    start_response("200 OK", headers)
+    return [b"hello  world", ]
+
+if __name__ == "__main__":
+    with wsgiref.simple_server.make_server("", 8000, hello_world) as server:
+        server.serve_forever()
+
+Listing 5-1Hello world WSGI app
+
+
+</pre>
+<p class="Para" id="Par10"><code>start_response(...)</code>函数特定于负责处理传入连接的 WSGI 兼容服务器，但是它总是以相同的方式运行。如果在 Python 的内置测试 web 服务器上使用,<code>hello_world(...)</code>函数也会工作得很好，比如 Gunicorn 这样的专业生产质量 web 服务器，甚至是 Heroku 这样的 PaaS 提供商。在<code>hello_world(...)</code>中没有涉及特定于服务器的导入或函数调用；这完全是通用的。</p>
+<p>这个函数的返回值是响应的主体，这可能与直觉相反，是一个可迭代的字节串，而不是单个字节串。如果我们在网页浏览器中打开<code>http://localhost:8000</code>，我们会看到“hello world”，如图<a href="#Fig1"> 5-1 </a>所示。</p>
+<p><img alt="../images/481001_1_En_5_Chapter/481001_1_En_5_Fig1_HTML.jpg" src="../images/481001_1_En_5_Chapter/481001_1_En_5_Fig1_HTML.jpg" style="width:25em"/></p>
+<p>图 5-1</p><p class="SimplePara">hello world 应用程序的浏览器视图</p>
+
+
+<p>使用生成器函数允许服务器在所有数据生成之前就开始向客户机传递一些数据，即在计算其余数据之前先处理部分数据。如果我们从纯文本切换到 HTML，<sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source" role="doc-noteref"> 1 </a> </sup>我们可以通过引入一些有意的延迟来看到这种效果，如清单<a href="#PC2"> 5-2 </a>所示。</p><pre>import time
+import wsgiref.simple_server
+
+def hello_world(environ, start_response):
+    headers = [
+        ("Content-type", "text/html; charset=utf-8"),
+        ("Content-Security-Policy", "default-src 'none';"),
+    ]
+    start_response("200 OK", headers)
+    yield b"&lt;html&gt;&lt;body&gt;"
+    for i in range(20):
+        yield b"&lt;p&gt;hello world&lt;/p&gt;"
+        time.sleep(1)
+    yield b"&lt;/body&gt;&lt;/html&gt;"
+
+if __name__ == "__main__":
+    with wsgiref.simple_server.make_server("", 8000, hello_world) as server:
+        server.serve_forever()
+
+Listing 5-2Generator-based hello world WSGI app
+
+
+</pre>
+
+<p class="Para" id="Par14">当我们在浏览器中打开<code>http://localhost:8000</code>时，我们现在看到 hello world 消息每秒钟以新行的形式出现一次。就吞吐量而言，这对于较大的响应非常有用，并且可以减少服务器上的内存使用。例如，如果我们编写了一个 WSGI 应用程序来传输一个 500MB 日志文件的每一行，那么遍历这些行并一行一行地生成它们就意味着内存中一次不会有超过一行，并且一旦文件开始被读取就发送数据。如果我们必须返回一个单独的字符串，那么整个文件必须被读入内存，然后作为一个整体传递给服务器进行传输。</p>
+<p>我们可以使用同样的方法来创建一个 WSGI 端点，它遍历传感器并依次获取关于每个传感器的信息。然而，单个 JSON 对象更容易解析为 API 响应，因此最好创建一个传感器标题字典来赋值，并将其作为一个整体进行序列化。现在是向该函数添加类型信息的好时机，这样我们就可以利用 mypy 的类型提示来标记错误。结果服务器列出了<a href="#PC3"> 5-3 </a>，我们应该将其保存为<code>src/apd/sensors/wsgi.py</code>。</p>
+<pre>import json
+import typing as t
+import wsgiref.simple_server
+
+from apd.sensors.cli import get_sensors
+
+
+
+
+if t.TYPE_CHECKING:
+    # Use the exact definition of StartResponse, if possible
+    from wsgiref.types import StartResponse
+else:
+    StartResponse = t.Callable
+
+def sensor_values(
+    environ: t.Dict[str, str], start_response: StartResponse
+) -&gt; t.List[bytes]:
+    headers = [
+        ("Content-type", "application/json; charset=utf-8"),
+        ("Content-Security-Policy", "default-src 'none';"),
+    ]
+    start_response("200 OK", headers)
+    data = {}
+    for sensor in get_sensors():
+        data[sensor.title] = sensor.value()
+    encoded = json.dumps(data).encode("utf-8")
+    return [encoded]
+
+if __name__ == "__main__":
+    with wsgiref.simple_server.make_server("", 8000, sensor_values) as server:
+        server.handle_request()
+
+Listing 5-3Basic WSGI server to show sensor data
+
+
+</pre>
+<p>我们可以通过在我们的开发机器上使用</p>
+<pre>&gt; pipenv run python -m apd.sensors.wsgi
+
+</pre>
+<p>访问这个 web 服务器并通过<code>jq</code> JSON 格式化程序<sup> <a epub:type="noteref" href="#Fn2" id="Fn2_source" role="doc-noteref"> 2 </a> </sup>传递它会产生以下输出:</p><pre>{
+  "AC Connected": false,
+  "CPU Usage": 0.098,
+  "IP Addresses": [
+    [
+      "AF_INET6",
+      "fe80::xxxx:xxxx:xxxx:fa5"
+    ],
+    [
+      "AF_INET6",
+      "2001:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:1b9b"
+    ],
+    [
+      "AF_INET6",
+      "2001:xxxx:xxxx:xxxx:xxxx:xxxx:xxxx:fa5"
+    ],
+    [
+      "AF_INET",
+      "192.168.1.246"
+    ]
+  ],
+  "Python Version": [
+
+
+
+    3,
+    8,
+    0,
+    "final",
+    0
+  ],
+  "RAM Available": 716476416,
+  "Relative Humidity": null,
+  "Ambient Temperature": null,
+  "Solar panel cumulative output": null
+}
+
+</pre>
+
+Note
+<p class="Para FirstParaInFormalPara" id="Par19">我们已经检查了<code>t.TYPE_CHECKING</code>并且有条件地进口了一些东西。有些名字只能在 mypy 中导入，不能在普通 Python 中导入。当在<code>.pyi</code>文件中定义了帮助变量，而不是直接在<code>.py</code>文件中集成类型提示时，就会发生这种情况。<code>StartResponse</code>变量就是其中之一；它表示标准<code>start_response(...)</code>函数的类型，wsgiref 服务器的实际定义不需要它，只需要类型提示。这个块让我们在类型检查时导入正确的值，但是在其他情况下，我们退回到不太具体的<code>t.Callable</code>，因为类型提示在类型检查运行之外并不重要。</p>
+
+<p class="Para" id="Par20">当然，我们应该编写一个测试来确保端点按预期工作。由于我们还没有编写任何代码来处理错误情况，所以我们可以编写的测试并不多，但是类似于<code>test_sensors.py</code>中 CLI 的高级功能测试是合适的。</p>
+<p>由于 WSGI 接口是一个 Python API，所以可以通过调用带有<code>environ</code>和<code>start_response</code>参数占位符值的<code>sensor_values(...)</code>函数来为它们编写功能测试。WebTest 包提供了一种封装 WSGI 函数并使用行为类似于高级 HTTP API 的 API 与之交互的方法，这使得编写测试更加容易。安装 WebTest 后，我们可以将清单<a href="#PC7"> 5-4 </a>中的测试添加到<code>tests/</code>目录中并运行它。</p>
+<pre>import pytest
+
+from webtest import TestApp
+
+from apd.sensors.wsgi import sensor_values
+from apd.sensors.sensors import PythonVersion
+
+@pytest.fixture
+def subject():
+    return sensor_values
+
+@pytest.fixture
+def api_server(subject):
+    return TestApp(subject)
+
+@pytest.mark.functional
+def test_sensor_values_returned_as_json(api_server):
+    json_response = api_server.get("/sensors/").json
+    python_version = PythonVersion().value()
+
+    sensor_names = json_response.keys()
+    assert "Python Version" in sensor_names
+    assert json_response["Python Version"] == list(python_version)
+
+Listing 5-4Functional test for wsgi service
+
+
+</pre>
+<pre>&gt; pipenv install --dev webtest
+
+</pre>
+<p class="Para" id="Par22">虽然我们的 WSGI 应用程序可以工作，但是它离产品质量还很远。这就是微框架有用的地方；它们让我们从没有错误检查的单端点 web 应用程序过渡到可靠的、生产质量的 web 应用程序。</p>
+
+<h3 class="Heading">API 设计</h3>
+<p class="Para" id="Par23">在我们继续之前，我们应该计划我们想要提供的 API。我们希望能够检索所有的传感器值，但是获得单个特定值可能是有用的，因为提取传感器值可能需要一些时间。我们还需要决定这个 API 的身份验证，因为它将不再受到保护，因为只有能够登录到相关服务器的人才能使用它。</p>
+<p class="Para" id="Par24">大多数 API 不使用传统的用户名和密码登录系统；相反，他们使用单个 API 密钥作为凭证。无论我们的用户是由用户名和密码标识的人，还是由 API 键标识的其他程序，选择授权系统的考虑因素都是相同的。</p>
+<p class="Para" id="Par25">有三种广泛的用户授权方法。<sup> <a epub:type="noteref" href="#Fn3" id="Fn3_source" role="doc-noteref"> 3 </a> </sup>扁平的权限结构在简单的应用程序中很流行，用户只需要登录就可以访问网站的所有功能。这种方法通常用在简单的 Django 应用程序中。如果用户登录并且在用户对象上设置了<code>is_staff</code>属性，他们就可以访问网站的管理员功能。</p>
+<p class="Para" id="Par27">Django 的完全授权制度表明了第二种选择。它在一个组和许可系统上工作。可以直接或通过用户的组成员身份为用户分配权限。这些权限是细粒度的，但相对来说是全局的。例如，如果用户拥有“编辑用户”权限，他们将能够编辑任何用户。</p>
+<p class="Para" id="Par28">最后，最复杂的系统涉及用户和数据之间具有灵活关系的权限。在这种情况下，不会直接为用户分配权限，而是将权限分配给站点中某个数据上下文中的用户或组。在这种情况下，我们可能会看到，在给定用户的上下文中,“编辑用户”权限被分配给整个管理员组和相关的单个用户。</p>
+<p>图<a href="#Fig2"> 5-2 </a>显示了我推荐用来确定三种方法中哪一种最适合您的用例的决策树。</p>
+<p><img alt="../images/481001_1_En_5_Chapter/481001_1_En_5_Fig2_HTML.jpg" src="../images/481001_1_En_5_Chapter/481001_1_En_5_Fig2_HTML.jpg" style="width:30em"/></p>
+<p>图 5-2</p><p class="SimplePara">用于选择不同 authz 方法的决策树</p>
+
+
+<p class="Para" id="Par30">我们的 API 将是只读的；我们需要保护的唯一功能是读取传感器值的能力。要回答第一个问题，我们需要决定是否要根据请求用户的身份向不同组的传感器授予 API 访问权限。是否允许部分用户看到 Python 版本却看不到温度？这个 API 的唯一用例是从多个来源收集信息并集中存储，这意味着我们只希望加载所有传感器值，并且希望使用最少的 HTTP 请求来完成。对所有用户一视同仁的授权解决方案是最合适的。这种访问控制的目的不是区分具有不同权限级别的用户；我们只关心用户是否有效。</p>
+<p class="Para" id="Par31">因此，我们在第一个问题上采取右边的分支。下一个决定是我们是否需要能够通过系统创建新用户，或者我们是否可以预先定义用户凭证。我们只需要一个用户就可以访问这些信息，所以我们不需要添加新的用户。</p>
+<p class="Para" id="Par32">这样做的结果是，我们在最右边有认证系统；用户帐户预先定义为部署的属性。</p>
+<h4 class="Heading">证明</h4>
+<p class="Para" id="Par33">我们选择的认证框架也应该与我们期望的与 API 服务器的交互方式相匹配。用户最熟悉的身份验证形式是提供会话凭据的专用登录页面，通常采用 cookie 的形式。Cookies 有一个有限的生命周期，尽管这可能是一个很长的时间，这使得用户可以避免定期主动重新认证。</p>
+<p class="Para" id="Par34">另一种在 API 中更常见的方法是，每个请求可以包含身份验证信息，或者作为专用的 HTTP 头，或者通过使用 HTTP Basic 和 Digest auth 特性。</p>
+<p class="Para" id="Par35">因为我们打算让我们的 API 被一个自动化的过程访问，并且登录信息不会改变，所以 API key 风格的认证系统符合我们的需求。</p>
+
+
+<h3 class="Heading">瓶</h3>
+<p class="Para" id="Par36">这个<em class="EmphasisTypeItalic "> Flask </em>微框架的灵感来自于一个愚人节玩笑:一个叫做<em class="EmphasisTypeItalic ">的微框架否认了</em>是作为一个单一文件发布的，接口非常简单。作者阿明·罗纳彻写了一个 160 行的框架，强调营销胜于高级功能。也许毫不奇怪，当大多数 web 框架关注大型的、功能齐全的应用程序时，许多人实际上对 web 编程的简单接口感兴趣。一年后，<em class="EmphasisTypeItalic "> Flask </em>诞生了，这是一个高质量的 web 框架，旨在满足那些对<em class="EmphasisTypeItalic ">如此感兴趣而对</em>不感兴趣的人。</p>
+<p class="Para" id="Par37">Flask 提供使用 Jinja2 模板语言生成 HTML，管理请求和响应头，管理 URL 路由，并在需要时生成错误。这种灵活性使得简化我们之前编写的函数(删除一些实现细节)以及扩展接口以提供更多功能变得更加容易。</p>
+<p class="Para" id="Par38">在开始编写基于 Flask 的 web 服务器之前，我们需要将 Flask 添加到项目的依赖项中。我们将采取不同于以往的方法，并将此作为“额外内容”添加进来。Extras 是 Python 包的可选依赖集，用户可以在安装时选择。只想要命令行工具的用户将运行<code>pipenv install apd.sensors</code>，而想要 API 访问的用户将运行<code>pipenv install apd.sensors[webapp]</code>。</p>
+<p><em class="EmphasisTypeItalic "> setup.cfg 段定义了</em> <code>webapp</code> <em class="EmphasisTypeItalic ">多余的</em></p>
+<pre>[options.extras_require]
+webapp = flask
+
+</pre>
+<p class="Para" id="Par40">选择将 CLI 依赖项作为核心要求，而将 API 服务器作为可选项，这是完全随意的；开发人员完全有可能需要额外的两个特性，或者将它们作为默认依赖项包含进来。</p>
+Tip
+<p class="Para FirstParaInFormalPara" id="Par41">您应该根据用户的需求决定默认安装哪些依赖项，哪些是额外的。如果您怀疑有些用户可能不想使用完全独立的特性，特别是如果它有很大的依赖集，那么它是额外的一个很好的候选。</p>
+<p class="Para" id="Par42">请记住，试图从<code>extras_require</code>中指定的包导入一个模块会导致导入错误。如果您在这样的模块中有一个命令行脚本，您应该捕捉导入错误并在命令行上返回一个有用的错误。对于试图运行 CLI 工具而没有在安装时指定他们需要 CLI 依赖项的用户来说,<code>ImportError</code> traceback 并不是一个合适的错误。</p>
+
+<p class="Para" id="Par43">一旦我们添加了<code>webapp</code>额外声明，我们就可以使用<code>pipenv install -e .[webapp]</code>声明我们的环境需要这个额外声明。这将导致 flask 被添加到依赖项集并安装到环境中。安装了一个 flask 可执行文件，可以通过<code>pipenv run flask</code>访问，但对我们来说重要的是我们能够导入 Flask 应用程序代码。</p>
+<p>我们创建的基本传感器列表 WSGI 应用程序的等效 Flask 应用程序非常相似(列表<a href="#PC9"> 5-5 </a>),它展示了 Flask 在 web 服务器和程序员之间的介入是多么少。这里的关键是<code>@app.route(...)</code>装饰器调用。我们将在下一节中讨论 decorator，但是现在只需要知道 decorator 操作它直接位于其定义之前的函数或类就足够了。在这种情况下，<code>@app.route("/sensors/")</code>定义了下面的函数是负责<code>http://localhost:8000/sensors/</code>的实现。</p>
+<pre>import json
+import typing as t
+import wsgiref.simple_server
+
+from flask import Flask
+
+from apd.sensors.cli import get_sensors
+
+app = Flask(__name__)
+
+@app.route("/sensors/")
+def sensor_values() -&gt; t.Tuple[t.Dict[str, t.Any], int, t.Dict[str, str]]:
+    headers = {"Content-Security-Policy": "default-src 'none'"}
+    data = {}
+    for sensor in get_sensors():
+        data[sensor.title] = sensor.value()
+    return data, 200, headers
+
+if __name__ == "__main__":
+    with wsgiref.simple_server.make_server("", 8000, app) as server:
+        server.serve_forever()
+
+Listing 5-5Minimal example of sensor API server in Flask
+
+
+</pre>
+<p class="Para" id="Par45">如果我们没有设置任何显式的头值，我们可以进一步简化<code>sensor_values()</code>函数，只返回数据字典。<sup> <a epub:type="noteref" href="#Fn4" id="Fn4_source" role="doc-noteref"> 4 </a> </sup> Flask 自动处理将视图函数返回的字典转换为 JSON 表示，以及编码字符串和设置适当的内容类型头。</p>
+<p class="Para" id="Par47">这个 WSGI 端点与我们手工创建的基本端点的最大区别是，这个端点根据 URL 返回不同的内容。我们最初的实现不检查特定的 URL，总是返回传感器的值。新的实现将为任何 URL 返回 404，除了<code>/sensors/</code>(和<code>/sensors</code>，它将被重定向到<code>/sensors/</code>)。</p>
+<p class="Para" id="Par48">为了测试这个新的 Flask 版本，我们需要导入名称<code>app</code>而不是<code>sensor_values()</code>，因为<code>sensor_values()</code>已经成为实现细节，而<code>app</code>是实际的 WSGI 端点。此外，如果我们以前没有这样做，我们必须确保我们对正确的 URL 发出了 GET 请求。</p>
+DISPATCHING FUNCTIONS ON THE WEB
+<p class="Para FirstParaInFormalPara" id="Par49">在第二章<a href="02.html">中，我们讨论了动态分派的概念，在运行时通过调用的类来查找函数。因此，我们使用的<code>@app.route(...)</code>装饰器有一个 app 的隐式第一个参数，允许装饰器将被装饰的函数注册为<code>app</code>对象上的已知路径。</a></p>
+<p class="Para" id="Par50">无论请求是什么，WSGI 应用程序都使用相同的环境和请求类型调用相同的函数。由这个函数来决定哪个代码负责响应这个请求。</p>
+<p class="Para" id="Par51"><code>app</code>对象有一组注册的视图函数可供选择。这些通常带有条件注释，比如匹配 URL 的特定正则表达式；请求是 GET、POST 还是 DELETE 等等；甚至像权限查找或接受头这样的复杂条件。</p>
+<p class="Para" id="Par52">框架的职责是为给定的 web 请求确定应该调用哪个用户提供的函数。由于这允许将单个函数映射到 URL，这使得为 Web 编写代码的过程比 WSGI 默认的单个函数做所有工作更容易管理。</p>
+<p class="Para" id="Par53">金字塔 web 框架通过其谓词系统将这一点发挥到了极致，允许将任意条件与视图函数相关联。它允许不同的函数根据任意条件负责给定的 URL，这是一个非常强大的特性。</p>
+
+
+<h3 class="Heading">Python 装饰者</h3>
+<p class="Para" id="Par54">在我们能够称这个 API 为生产就绪之前，我们需要实现我们讨论过的访问控制。我们可以通过使用装饰器来实现这一点，就像 Flask 使用与 route 装饰器相关联的 URL 模式来注释函数一样。</p>
+<p class="Para" id="Par55">decorator 是一个 Python 函数，它将单个可调用的类或类作为参数，并返回传递给它的相同类型的参数。装饰模式允许用户编写定制的函数序言或后记——在函数主体之前或之后运行的代码。您无法访问函数的内部变量，只能访问输入和输出，但这足以对输入或输出的转换添加额外的错误检查。此外，一些 decorator 函数代码在函数定义时运行，可用于在应用程序启动时设置元数据(如 URL 路由)。</p>
+<p class="Para" id="Par57">通过在函数体的开头或结尾调用一个实用函数，可以完成装饰者做的许多事情；装饰者是一个非常方便的特性。Python 开发人员通常更喜欢编写 decorators，因为他们被认为更符合该语言的习惯，但是他们也有一些真正的优势。</p>
+<p>使用一个效用函数来完成装饰器的工作意味着被操作的函数需要添加一些条件逻辑来处理各种效用函数的结果。表<a href="#Tab1"> 5-1 </a>显示了一个效用函数和装饰器的例子，如果一个函数的任何参数为负，它将返回 0。<code>has_negative_arguments(...)</code>函数决定我们要禁止的情况是否适用，但是处理该情况的代码必须添加到<code>power(...)</code>函数本身。</p>
+<p>表 5-1</p><p class="SimplePara">一个助手函数和一个装饰器方法来验证参数</p>
+
+
+<table style="border-collapse: collapse;border-top: 0.5pt solid ; border-bottom: 0.5pt solid ; border-left: 0.5pt solid ; border-right: 0.5pt solid ; "><colgroup><col class="tcol1 align-left"/>
+<col class="tcol2 align-left"/>
+</colgroup>
+<tbody><tr><td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><em class="EmphasisTypeItalic ">辅助功能方法</em></p>
+<p class="SimplePara"><code>def has_negative_arguments(*args):</code></p>
+<p class="SimplePara"><code>for arg in args:</code></p>
+<p class="SimplePara"><code>if arg &lt; 0:</code></p>
+<p class="SimplePara"><code>return True</code></p>
+<p class="SimplePara"><code>return False</code></p>
+<p class="SimplePara"><code>def power(x, y):</code></p>
+<p class="SimplePara"><code>if has_negative_arguments(x, y):</code></p>
+<p class="SimplePara"><code>return 0</code></p>
+<p class="SimplePara"><code>return x ** y</code></p>
+</td>
+<td style="text-align: left;"><p class="SimplePara"><em class="EmphasisTypeItalic ">装饰方法</em></p>
+<p class="SimplePara"><code>def disallow_negative(func):</code></p>
+<p class="SimplePara"><code>def inner(*args):</code></p>
+<p class="SimplePara"><code>for arg in args:</code></p>
+<p class="SimplePara"><code>if arg &lt; 0:</code></p>
+<p class="SimplePara"><code>return 0</code></p>
+<p class="SimplePara"><code>return func(*args)</code></p>
+<p class="SimplePara"><code>return inner</code></p>
+<p class="SimplePara"><code>@disallow_negative</code></p>
+<p class="SimplePara"><code>def power(x, y):</code></p>
+<p class="SimplePara"><code>return x ** y</code></p>
+</td>
+</tr>
+</tbody>
+</table>
+
+<p class="Para" id="Par59">装饰器方法将条件和测试一起放在装饰器中。这种方法意味着装饰器是完全独立的；想要使用它的函数不需要包含任何超出自己实现所需的逻辑。</p>
+<p class="Para" id="Par60">这两种实现在行为上没有区别；然而，decorator 版本将所有的复杂性转移到了 decorator 定义本身，让用户函数自由。一般来说，decorators 由多个函数使用，所以这种模式允许使用干净、容易理解的代码。</p>
+<h4 class="Heading">关闭</h4>
+<p>装饰者依赖于一种叫做闭包的语言特性，这是变量作用域的一个有点复杂的结果。在 Python 中，当一个函数使用内部变量时，这些变量只能在该函数中通过名称获得:尽管它们的值可能会被返回，但是当执行从该函数传递过来时，该变量的内部名称的绑定会丢失。</p>
+<pre>def example(x, y):
+    a = x + y
+    b = x * y
+    c = b * a
+    print(f"a: {a}, b: {b}, c: {c}")
+    return c
+
+&gt;&gt;&gt; result = example(1, 2)
+a: 3, b: 2, c: 6
+&gt;&gt;&gt; print(result)
+6
+
+</pre>
+<p class="Para" id="Par62">在执行<code>example(...)</code>函数的过程中，变量<code>x</code>和<code>y</code>是传递给函数的参数。随着执行的继续，变量<code>a</code>、<code>b</code>和<code>c</code>被逐步定义。一旦执行通过返回函数传递回包含范围，所有这些变量关联都将丢失。仅保留曾经与<code>c</code>关联的<em class="EmphasisTypeItalic ">值</em>，然后将其存储在包含范围的结果变量中。</p>
+<p>然而，如果我们在这个函数中定义了一个函数并返回它，那么这个内部函数必须仍然可以访问它需要执行的所有变量。只要还需要这些变量，解释器就不会解除它们的关联。在外部函数作用域中定义的、被内部函数使用的任何变量都将把它们的关联传递到这个新函数中，<sup> <a epub:type="noteref" href="#Fn6" id="Fn6_source" role="doc-noteref"> 6 </a> </sup>，并且这些变量仍然对内部函数可用，但对任何其他函数都不可用。这个内部函数被称为<em class="EmphasisTypeItalic ">闭包</em>。</p><pre>def example(x, y):
+    a = x + y
+    b = x * y
+    c = b * a
+    print(f"a: {a}, b: {b}, c: {c}")
+    def get_value_of_c():
+        print(f"Returning c: {c}")
+        return c
+    return get_value_of_c
+
+
+
+&gt;&gt;&gt; getter = example(1, 2)
+a: 3, b: 2, c: 6
+&gt;&gt;&gt; print(getter)
+&lt;function example.&lt;locals&gt;.get_value_of_c at 0x034F96F0&gt;
+&gt;&gt;&gt; print(getter())
+Returning c: 6
+6
+
+</pre>
+
+<p class="Para" id="Par65">在这个例子中，变量 c 与<code>get_value_of_c()</code>函数相关联，因此在调用该函数时可以返回它。当我们调用<code>get_value_of_c()</code>函数时，它可以访问示例中的变量<code>c</code>，但不能访问变量<code>a</code>或<code>b</code>，因为它不使用它们。</p>
+<h5 class="Heading">修改父范围中的变量</h5>
+<p class="Para" id="Par66">有可能比这更进一步，编写复杂的函数集，对其包含范围内的变量进行操作，可能会改变它们的值。我想不出我什么时候需要过这个功能，但是理解变量作用域是如何工作的是很有帮助的。</p>
+<p class="Para" id="Par67">为了实现这一点，我们需要使用<strong class="EmphasisTypeBold ">非本地</strong>关键字。虽然 Python 可以推断出，如果使用了变量的值，就应该从包含变量的范围中提取变量，但是它不能推断出设置变量是试图修改外部变量还是创建新变量。假设您正在创建一个新变量，它隐藏了外部变量，<sup> <a epub:type="noteref" href="#Fn7" id="Fn7_source" role="doc-noteref"> 7 </a> </sup>，就像函数可以隐藏其模块全局范围内的名字一样。</p>
+<p>一对函数通过闭包对它们共享的变量进行操作。</p>
+<pre>def private_variable():
+    value = None
+    def set(new_value):
+        nonlocal value
+        value = new_value
+
+
+
+    def get():
+        return value
+    return set, get
+
+&gt;&gt;&gt; a_set, a_get = private_variable()
+&gt;&gt;&gt; b_set, b_get = private_variable()
+
+&gt;&gt;&gt; print(a_get, a_set)
+&lt;function private_variable.&lt;locals&gt;.get at 0x034F98E8&gt; &lt;function private_variable.&lt;locals&gt;.set at 0x034F9660&gt;
+&gt;&gt;&gt; print(b_get, b_set)
+&lt;function private_variable.&lt;locals&gt;.get at 0x034F9858&gt; &lt;function private_variable.&lt;locals&gt;.set at 0x034F97C8&gt;
+
+&gt;&gt;&gt; a_set(10)
+&gt;&gt;&gt; print(f"a={a_get()} b={b_get()}")
+a=10 b=None
+
+&gt;&gt;&gt; b_set(4)
+&gt;&gt;&gt; print(f"a={a_get()} b={b_get()}")
+a=10 b=4
+
+</pre>
+<p class="Para" id="Par70">这证明了可以编写一个包含函数的函数，并且内部函数可以使用外部函数中定义的数据。装饰者更进一步，将外部和内部函数共享的数据作为第三个函数，也就是被扩展的函数。</p>
+
+
+<h4 class="Heading">基础装修工</h4>
+<p>最简单的装饰函数是对它所装饰的函数没有影响的函数。如清单<a href="#PC13"> 5-6 </a>所示。在这个例子中，函数<code>outer()</code>将一个用户函数作为参数<code>func=</code>，并返回一个名为<code>inner(...)</code>的函数作为结果。这使得<code>@outer</code>成为装饰函数，其行为由<code>inner(...)</code>定义。函数 inner 是一个闭包，所以它可以访问<code>outer(...)</code>函数的<code>func=</code>参数。这个变量是原始函数，所以<code>inner(...)</code>可以用它接收到的相同参数调用它，并将其结果返回给被修饰的函数。</p>
+<pre>def outer(func):
+    print(f"Decorating {func}")
+    def inner(*args, **kwargs):
+        print(f"Calling {func}(*{args}, **{kwargs})")
+        value = func(*args, **kwargs)
+        print(f"Returning {value}")
+        return value
+    return inner
+
+@outer
+def add_five(num):
+    return num+5
+
+Listing 5-6A decorator that does nothing but prints the variables it uses internally
+
+
+</pre>
+<p class="Para" id="Par72">一旦该代码被解释，行<code>Decorating &lt;function add_five at 0x034F9930&gt;</code>被打印。如果它存储为一个模块，它会在模块导入后立即显示。这表明装饰器中的<code>outer(...)</code>函数的内容是在解析函数时运行的，而不是在执行函数时运行的。</p>
+<p>如果我们在一个交互式会话中使用它，我们可以看到,<code>add_five(...)</code>函数已经被 inner 函数所取代，但是它仍然以同样的方式工作，尽管增加了额外的打印。</p>
+<pre>&gt;&gt;&gt; print(add_five)
+&lt;function outer.&lt;locals&gt;.inner at 0x034F9A50&gt;
+&gt;&gt;&gt; add_five(1)
+Calling &lt;function add_five at 0x034F9930&gt;(*(1,), **{})
+Returning 6
+6
+
+</pre>
+<p class="Para" id="Par74"><code>inner</code>函数使用<code>*args</code>、<code>**kwargs</code>作为它的参数来接受任意数量的参数，并将它们传递给<code>func</code>。我们在这里写的装饰器不会改变参数，所以<code>inner</code>和<code>func</code>的函数签名需要兼容。如果<code>inner(...)</code>定义了不同于<code>func</code>的参数，那么这个装饰器就不能使用。</p>
+Tip
+<p class="Para FirstParaInFormalPara" id="Par75">通常包装函数需要<em class="EmphasisTypeItalic ">访问</em>至少一个传递给内部函数的参数，但是不加改变地传递它们。在这种情况下，我建议尝试精确匹配函数参数，而不是尝试从<code>*args</code>或<code>**kwargs</code>中提取值。这避免了在从<code>args</code>或<code>kwargs</code>中寻找正确值时引入的任何错误。</p>
+
+<p class="Para" id="Par76">有时我们希望创建一个装饰器来操纵参数，例如，填充一个或多个参数而不需要调用方传递它们，或者删除一个或多个底层函数不期望的参数。通过这种方式，decorators 可以用来改变函数签名。能够更改签名允许我们编写装饰器来为程序员简化 API，同时仍然为应用程序的其他部分匹配更复杂的签名。</p>
+<p class="Para" id="Par77">例如，<code>sorted(...)</code>标准库函数曾经有一个可选的<code>cmp=</code>参数和一个<code>key=</code>参数。Python 3 中删除了<code>cmp=</code>参数，所以移植到 Python 3 的旧代码有时需要更新。</p>
+<p class="Para" id="Par78">这两种方法完全不同；将编写为 cmp 函数的代码转换为等价的键函数并不容易。标准库中的<code>functools</code>模块包含一个<code>cmp_to_key</code>函数，它可以用作装饰器并执行这种转换。</p>
+
+<h4 class="Heading">有争论的装饰者</h4>
+<p class="Para" id="Par79">还有一种更常见的装饰器形式，它将另一个嵌套函数添加到组合中。这种形式是迄今为止最难以理解的，但它是我们目前所看到的代码的逻辑结果。最后一种形式是一个接受直接参数的装饰器。</p>
+<p class="Para" id="Par80">使用 decorator 的语法是在函数或类的上一行添加<code>@decorator</code>，这相当于在函数被定义后添加行<code>function = decorator(function)</code>。</p>
+<p>当使用接受参数的装饰器时，提供这些参数的格式是<code>@decorator(arg)</code>，可以重写为<code>function = decorator(arg)(function)</code>。也就是说，装饰函数不再是<code>decorator(...)</code>本身，而是<code>decorator(arg)</code>的返回值。如清单<a href="#PC15"> 5-7 </a>所示。</p>
+<pre>def add_integer_to_all_arguments(offset):
+    def decorator(func):
+        def inner(*args):
+            args = [arg + offset for arg in args]
+            return func(*args)
+        return inner
+    return decorator
+
+@add_integer_to_all_arguments(10)
+def power(x, y):
+    return x ** y
+
+@add_integer_to_all_arguments(3)
+def add(x, y):
+    return x + y
+
+Listing 5-7A simple decorator that takes an argument
+
+
+</pre>
+<p>这些修饰函数的所有参数都增加了一个偏移量，但是每种情况下的偏移量都是不同的，因为修饰函数的参数定义了偏移量。</p>
+<pre>&gt;&gt;&gt; print(power)
+&lt;function add_integer_to_all_arguments.&lt;locals&gt;.decorator.&lt;locals&gt;.inner at 0x00B0CBB8&gt;
+&gt;&gt;&gt; power(0, 0)
+10000000000
+&gt;&gt;&gt; print(add)
+&lt;function add_integer_to_all_arguments.&lt;locals&gt;.decorator.&lt;locals&gt;.inner at 0x00B0CC48&gt;
+&gt;&gt;&gt; add(0,0)
+6
+
+</pre>
+Tip
+<p class="Para FirstParaInFormalPara" id="Par83">有一个装饰器可以帮助编写用户友好的装饰器。用<code>@functools.wraps(func)</code>修饰内部函数可以确保，如果用户试图查看文档、帮助，甚至是被修饰函数的名称，他们看到的信息与未修饰版本的相同。</p>
+<p class="Para" id="Par84">如果我们早些时候在<code>inner(...)</code>函数上使用了这个装饰器，那么终端会话应该如下所示:</p>
+
+<p>
+ 
+</p>
+<pre>&gt;&gt;&gt; print(power)
+&lt;function power at 0x00B0CCD8&gt;
+&gt;&gt;&gt; power(0, 0)
+10000000000
+&gt;&gt;&gt; print(add)
+&lt;function add at 0x00B0CB70&gt;
+&gt;&gt;&gt; add(0,0)
+6
+
+</pre>
+<p class="Para" id="Par86">嵌套三个函数可能很难保持头脑清晰，特别是因为有两个层次的闭包，一个提供<code>offset</code>变量，另一个提供<code>func</code>。这种语法是一种令人困惑的嵌套逻辑，通常应该避免。在极少数需要这种装饰器的情况下，开发人员通常会通过查阅文档来提醒自己正确的语法。</p>
+<p>三重嵌套函数的一种替代方法是使用基于类的装饰器(清单<a href="#PC18"> 5-8 </a>，它看起来更像标准 Python，所以一看就更容易理解。这是因为一个类定义了一个<code>__init__(...)</code>函数来接受实例化的参数，并且可以提供一个<code>__call__(...)</code>方法来允许类被直接调用，就像一个函数一样。它遵循与本章前面的私有变量示例相同的模式；在函数使用一个变量之前，使用一个闭包来长时间存储这个变量是不好的做法。类实例更适合这种情况。</p>
+<pre>class add_integer_to_all_arguments:
+    def __init__(self, offset):
+        self.offset = offset
+
+    def __call__(self, func):
+        def inner(*args):
+            args = [arg + self.offset for arg in args]
+            return func(*args)
+        return inner
+
+Listing 5-8A class-based version of an offset decorator
+
+
+</pre>
+<p class="Para" id="Par88">基于类的装饰器和基于多重嵌套函数的装饰器在功能上是等价的；但我发现基于课堂的方法更自然，也更容易记忆。</p>
+
+<h4 class="Heading">基于装饰的安全性</h4>
+<p class="Para" id="Par89">现在我们已经看了装饰者是如何工作的；我们可以用它来检查函数中授权的 API 访问。Flask 视图函数不需要参数；HTTP 请求数据存储在一个全局变量中，所以我们编写的装饰器不需要处理任何参数。我们不必担心参数与函数的匹配，因为很少有 Flask 视图函数接受参数。</p>
+<p class="Para" id="Par90">但是，我们确实需要确保函数的返回值是类型注释所允许的。Flask 支持从视图函数返回响应的多种不同方式。在 JSON 响应的情况下，响应的主体可以作为字符串或字典返回。这个函数可以返回主体或者一个<code>(body, status)</code>元组，或者<code>(body, headers)</code>，或者<code>(body, status, headers)</code>，等等。这种灵活性使打字变得更加复杂。<sup> <a epub:type="noteref" href="#Fn8" id="Fn8_source" role="doc-noteref"> 8 </a> </sup></p>
+<p>清单<a href="#PC19"> 5-9 </a>显示了一个不做任何事情的 flask 视图的类型化装饰器。这是一个泛型函数，就像我们将 Sensor 定义为泛型类一样。装饰器<code>@outer</code>将一个不需要参数的函数作为参数，并返回<em class="EmphasisTypeItalic ">某个东西</em>。装饰器的返回值是一个不带参数的函数，返回的内容与参数函数相同。</p>
+<pre>import functools
+import typing as t
+
+ViewFuncReturn = t.TypeVar("ViewFuncReturn")
+
+def outer(func: t.Callable[[], ViewFuncReturn]) -&gt; t.Callable[[], ViewFuncReturn]:
+
+    @functools.wraps(func)
+    def wrapped() -&gt; ViewFuncReturn:
+        return func()
+
+    return wrapped
+
+Listing 5-9A decorator for a flask function
+
+
+</pre>
+<p>类型变量是被修饰函数的返回值的占位符。如果该函数被声明为返回一个字符串，那么字典将被视为等效于</p>
+<pre>def outer(func: t.Callable[[], str]) -&gt; t.Callable[[], str]:
+
+    @functools.wraps(func)
+    def wrapped() -&gt; str:
+        return func()
+
+    return wrapped
+
+</pre>
+<p class="Para" id="Par94">如果同一个函数正在装饰一个返回元组<code>(dict, int)</code>的视图，那么装饰器将会匹配它。</p>
+<p>我们想要创建一个装饰器来检查被认证的用户。其代码如清单<a href="#PC21"> 5-10 </a>所示。如果用户通过了身份验证，我们希望正常使用该函数。如果不是，那么装饰器应该返回一个错误值。适当的错误应该是一个 JSON 文档，其中包含错误详细信息和状态 403 禁止。因此，包装函数必须声明为返回底层函数将返回的任何内容或<code>t.Tuple[t.Dict[str, str], int]</code>。</p>
+<pre>from hmac import compare_digest
+import functools
+import os
+import typing as t
+
+import flask
+
+ViewFuncReturn = t.TypeVar("ViewFuncReturn")
+ErrorReturn = t.Tuple[t.Dict[str, str], int]  # The type of response we # generate as an error
+
+def require_api_key(
+    func: t.Callable[[], ViewFuncReturn]
+) -&gt; t.Callable[[], t.Union[ViewFuncReturn, ErrorReturn]]:
+    """ Check for the valid API key and return an error if missing. """
+
+    api_key = os.environ.get["APD_SENSORS_API_KEY"]
+
+    @functools.wraps(func)
+    def wrapped(*args, **kwargs) -&gt; t.Union[ViewFuncReturn, ErrorReturn]:
+        """ Extract the API key from the inbound request and return an error if no match """
+
+        headers = flask.request.headers
+        supplied_key = headers.get("X-API-Key", "")
+
+        if not compare_digest(api_key, supplied_key):
+            return {"error": "Supply API key in X-API-Key header"}, 403
+
+        # Return the value of the underlying view
+        return func(*args, **kwargs)
+
+    return wrapped
+
+Listing 5-10Authentication decorator for flask API methods
+
+
+</pre>
+<p class="Para" id="Par96">其结果是，<code>require_api_key</code>装饰器改变它所装饰的函数，以返回与<code>func</code>返回的<sup> <a epub:type="noteref" href="#Fn9" id="Fn9_source" role="doc-noteref"> 9 </a> </sup> <em class="EmphasisTypeItalic ">相同的<em class="EmphasisTypeItalic "/>类型的数据，或者</em>一个包含字符串到字符串字典和整数的元组。</p>
+<p class="Para" id="Par98">该函数实现权限检查的方式如下。首先，我们从环境中提取我们正在寻找的 API 密钥，命名为<code>APD_SENSORS_API_KEY</code>。这里没有回退到默认值，这部分装饰器代码在启动时执行，所以如果没有设置 API 键，程序会以<code>KeyError</code>失败。</p>
+<p class="Para" id="Par99">接下来是包装了原始<code>func()</code>函数的函数定义，称为<code>wrapped()</code>。这个包装函数被定义为返回<code>ViewFuncReturn</code>或<code>ErrorReturn</code>。</p>
+EXERCISE 5-1: TYPING
+<p class="Para FirstParaInFormalPara" id="Par100">本节中的类型定义非常复杂；很难理解正在发生的事情。我建议您尝试编写一些简单的函数，并用 mypy 检查它们，以便直观地了解这里发生了什么。</p>
+<p>你可以从清单<a href="#PC22"> 5-11 </a>中的基础程序开始，尝试改变<code>hello()</code>函数的类型、<code>ErrorReturn</code>类型以及 hello 函数是否有<code>@result_or_number</code>装饰器。这可能是一个更容易的开始，因为返回类型比实际的 Flask 函数要简单得多。</p>
+<pre>import functools
+import random
+import typing as t
+
+ViewFuncReturn = t.TypeVar("ViewFuncReturn")
+ErrorReturn = int
+
+def result_or_number(
+    func: t.Callable[[], ViewFuncReturn]
+) -&gt; t.Callable[[], t.Union[ViewFuncReturn, ErrorReturn]]:
+
+    @functools.wraps(func)
+    def wrapped() -&gt; t.Union[ViewFuncReturn, ErrorReturn]:
+
+        pass_through = random.choice([True, False])
+        if pass_through:
+            return func()
+        else:
+            return random.randint(0, 100)
+
+    return wrapped
+
+@result_or_number
+def hello() -&gt; str:
+    return "Hello!"
+
+if t.TYPE_CHECKING:
+    reveal_type(hello)
+else:
+    print(hello())
+
+Listing 5-11Sample file for experimenting with decorator typing
+
+
+</pre>
+
+<p class="Para" id="Par102">这个<code>wrapped</code>函数的主体是实际工作发生的地方。所提供的 API 键是从 flask 请求头中读取的，这些请求头在 flask 框架中作为全局状态被访问，因此这些函数中不包含请求参数。请求提供的密钥从<code>X-API-Key</code>头中读取，如果没有提供头，则默认值为空字符串。</p>
+<p class="Para" id="Par103">空字符串 default 在这里，因为在下一行中，对<code>compare_digest</code>的调用用于比较收到的和预期的 API 键。这是一个字符串比较函数，适用于比较已知长度的身份验证字符串，如 HMAC 摘要。<sup> <a epub:type="noteref" href="#Fn10" id="Fn10_source" role="doc-noteref"> 10 </a> </sup>从理论上讲，使用标准比较可能会通过返回错误所需的时间来泄露关于正确 API 键的信息，所以最好使用恒定时间比较。这个<code>compare_digest</code>函数仍然会泄漏关于秘密字符串长度的信息。虽然在这种情况下这不是一个严重的问题，但是这个问题很容易解决，没有理由不使用安全的比较函数。</p>
+<p class="Para" id="Par105">最后，根据<code>compare_digest</code>函数的结果，我们要么委托给原始函数，要么返回股票错误响应。</p>
+<p><em class="EmphasisTypeItalic ">传感器端点代码</em></p>
+<pre>@app.route("/sensors/")
+@require_api_key
+def sensor_values() -&gt; t.Tuple[t.Dict[str, t.Any], int, t.Dict[str, str]]:
+    headers = {"Content-Security-Policy": "default-src 'none'"}
+    data = {}
+    for sensor in get_sensors():
+        data[sensor.title] = sensor.value()
+    return data, 200, headers
+
+</pre>
+<p>这里，我们之前创建的 sensor view 函数用我们新的<code>@require_api_key</code> decorator 进行了修饰，API 键检查将自动发生。需要注意的是，这里的装饰者是有序的；它们是自下而上应用的，底部装饰器的输出成为上面那个的输入。</p>
+<pre>def sensor_values():
+    ...
+sensor_values = app.route("/sensors/")(require_api_key(sensor_values))
+
+</pre>
+<p class="Para" id="Par108">装饰器将函数与 flask URL 路由系统联系起来。它所修饰的函数与 URL 相关联；运行时不查找函数。虽然这种差异听起来很学术，但这意味着只有装饰者<code>app.route(...)</code>下面的装饰者<em class="EmphasisTypeItalic ">会被应用到 Web 上可用的功能中。</em></p>
+<p class="Para" id="Par109">如果以相反的顺序应用这些装饰器，那么在这个视图上就不会有 API 键验证。这是我们回到功能测试的地方；从单元测试中直接调用函数并不能通过 flask 视图注册表找到它，这可能会使程序员认为视图受到了正确的保护。重要的是要端到端地测试安全特性，而不仅仅是孤立地测试。</p>
+
+
+<h3 class="Heading">测试视图功能</h3>
+<p class="Para" id="Par110">我们已经有了一个基本的测试来查看传感器数据是否通过使用 WebTest 框架的 API 请求返回，但是我们通过添加 API key validator 打破了这个测试。如果在您的环境中没有设置 API 密匙，并且您运行了<code>pipenv run pytest,</code>，那么测试失败，并显示<code>KeyError</code>。如果您已经在本地环境中设置了一个 API 键，那么它会失败并出现一个<code>Forbidden</code>错误。</p>
+<p class="Para" id="Par111">谈到可测试性，我们在 decorator 函数中犯了一个小小的判断错误。如前所述，预期的 API 键是在导入时加载的，如果没有设置 API 键，这会导致启动时出错。然而，导入时数据加载会增加测试代码的难度。我们希望使用一个已知的 API 键设置来运行测试，但是要做到这一点，我们需要确保在包含视图函数的模块被导入的第<em class="EmphasisTypeItalic ">次</em>之前，这个键被设置到环境中。</p>
+<p class="Para" id="Par112">Flask 在应用程序上提供了一个 config 属性，可以用来存储配置数据，这是一个比在 decorator 闭包中存储预期的 API 键更明智的地方。这样，当 web 服务器启动时，配置数据仍然可以被加载，或者测试框架可以为任何特定于测试的配置提供它。</p>
+<p class="Para" id="Par113">Flask 假设配置数据是从 Python 文件加载的，这可能会诱使我们将<code>apd.sensors</code>包的配置系统更改为相同的模式，但是因为我们只需要添加一个配置变量，所以我们将坚持使用现有的环境变量模式。</p>
+<p class="Para" id="Par114">最好的方法是创建一个设置函数，用来自环境的信息填充烧瓶配置。对 API 关键配置变量的检查在这里显式地发生，因为我们不得不在装饰器中移除对<code>os.environ</code>的检查以支持测试。显式检查通常比导致<code>KeyError</code>的隐式需求更容易理解，这应该有助于让我们确信这是一种更好的方法。如果这里没有显式的检查，那么在第一次加载受保护的视图之前，不会检查 API 键。</p>
+<p><em class="EmphasisTypeItalic ">设置功能</em></p>
+<pre>REQUIRED_CONFIG_KEYS = {"APD_SENSORS_API_KEY"}
+
+def set_up_config(environ: t.Optional[t.Dict[str, str]] = None) -&gt; flask.Flask:
+    if environ is None:
+        environ = dict(os.environ)
+    missing_keys = REQUIRED_CONFIG_KEYS - environ.keys()
+    if missing_keys:
+        raise ValueError("Missing config variables: {}".format(", ".join(missing_keys)))
+    app.config.from_mapping(environ)
+    return app
+
+</pre>
+Note
+<p class="Para FirstParaInFormalPara" id="Par116">这里的<code>REQUIRED_CONFIG_KEYS</code>变量被设置为 set 文字，而不是 dict 文字。集合字面量看起来非常类似于字典字面量，集合理解和字典理解也是如此。不同的是缺少<code>:value</code>。</p>
+
+<p>然后可以修改测试设置，用适当的测试配置值调用这个设置函数。我们创建一个新的 fixture 来提供测试 API 键，它可以是硬编码的或者随机的，<sup> <a epub:type="noteref" href="#Fn11" id="Fn11_source" role="doc-noteref"> 11 </a> </sup>然后将主题 fixture 更改为依赖于这个 API 键 fixture，并将其值作为显式设置传入。</p><pre>import pytest
+from webtest import TestApp
+
+from apd.sensors.wsgi import app, set_up_config
+from apd.sensors.sensors import PythonVersion
+
+@pytest.fixture
+def api_key():
+    return "Test API Key"
+
+@pytest.fixture
+def subject(api_key):
+    set_up_config({"APD_SENSORS_API_KEY": api_key})
+    return app
+
+@pytest.fixture
+def api_server(subject):
+    return TestApp(subject)
+
+</pre>
+
+<p class="Para" id="Par119">如果测试授权访问的行为，单个测试将需要依赖于<code>api_key</code> fixture，或者使用 WebTest 框架的<code>expect_errors</code>选项来检查错误响应，而不需要用<code>try</code> / <code>except</code>块包围 get 请求。</p>
+<p><em class="EmphasisTypeItalic ">API 端点的示例测试</em></p>
+<pre>@pytest.mark.functional
+def test_sensor_values_fails_on_missing_api_key(api_server):
+    response = api_server.get("/sensors/", expect_errors=True)
+    assert response.status_code == 403
+    assert response.json["error"] == "Supply API key in X-API-Key header"
+
+@pytest.mark.functional
+def test_sensor_values_returned_as_json(api_server, api_key):
+    value = api_server.get("/sensors/", headers={"X-API-Key": api_key}).json
+    python_version = PythonVersion().value()
+
+    sensor_names = value.keys()
+    assert "Python Version" in sensor_names
+    assert value["Python Version"] == list(python_version)
+
+</pre>
+<p class="Para" id="Par121">这些测试验证了 API 服务器正在按预期工作，所以在这个阶段，可以安全地剪切一个新发布的<code>apd.sensors</code>包，它记录了这个新的 API 服务器，这样我们就可以将它安装在我们的 Raspberry Pi 服务器上。</p>
+<p class="Para" id="Par122">新版本在不破坏向后兼容性的情况下增加了一个新特性，这再次意味着我们增加了次要版本号，这是第一个支持 web API access 1.3.0 的版本。</p>
+
+<h3 class="Heading">部署</h3>
+<p class="Para" id="Par123">我们现在有了一个可用的 API 端点，我们可以使用<code>python -m apd.sensors.wsgi</code>在本地作为测试，或者我们可以通过生产质量的 WSGI 服务器，比如<em class="EmphasisTypeItalic ">女服务员</em>来提供服务。为此，我们需要安装 want，并给它一个我们想要运行的 WSGI 应用程序的引用。还有许多其他的 WSGI 服务器，比如 mod_wsgi，它与 Apache 紧密集成；Gunicorn，这是一个单机应用，对性能的控制很好；Circus 和 Chaussette，包括过程管理和对工人的细粒度控制；还有 uWSGI，以性能好著称。</p>
+<p>我们使用的是 waste，因为它有一个简单的接口，并且是用纯 Python 实现的，没有编译扩展，所以它可以安装在各种操作系统上。</p>
+<pre>&gt; pipenv install waitress
+&gt; pipenv run waitress-serve --call apd.sensors.wsgi:set_up_config
+
+</pre>
+<p class="Para" id="Par125">缺省情况下，API web 服务在端口 8080 上提供服务，但是可以使用任何端口或 UNIX 套接字对其进行配置。如果要在可通过互联网访问的机器上运行，而不是在本地网络上运行，您应该考虑为您的部署设置一个 TLS 终止反向代理，如 apache、nginx 或 HAProxy。默认情况下，现代网络是加密的，用户只希望通过安全连接访问服务。幸运的是，有多种方法可以为您的域名获得免费的 TLS 证书。LetsEncrypt 和 AWS 证书管理器可能是最常见的。</p>
+<p class="Para" id="Par126">在前面的例子中，<code>apd.sensors.wsgi:set_up_config</code>使用了与我们在命令行参数中使用的相同的点路径和冒号语法来定义入口点。我已经将它指向了<code>set_up_config(...)</code>函数，它本身不是一个 WSGI 可调用函数。多亏了<code>--call</code>选项，这才成为可能，这意味着目标不是一个 WSGI 应用程序，而是一个 WSGI 应用程序<em class="EmphasisTypeItalic ">工厂</em>:一个返回已配置的 WSGI 应用程序的可调用程序。</p>
+<p class="Para" id="Par127">我们的 flask 应用程序是在模块范围内实例化的；我们可以用<code>pipenv run waitress-serve apd.sensors.wsgi:app</code>直接引用它，但是这不会像预期的那样工作，因为配置变量不会被设置。通过从我们的<code>set_up_config</code>函数返回模块范围<code>app</code>对象，我们使它像一个工厂一样工作，并确保配置变量被加载。</p>
+<p class="Para" id="Par128"><code>set_up_config(...)</code>函数像<code>app</code>一样修改全局作用域的值，而不是返回一个独立的应用程序，所以它不是一个真正的工厂。然而，由于它的签名是相同的，我们每次只需要一个<code>app</code>，我们可以滥用这个特性。</p>
+<p class="Para" id="Par129">用户编写一个定制的<code>wsgi.py</code>文件来设置他们的 WSGI 应用程序也是很常见的，潜在地将它包装在任何提供额外功能的<em class="EmphasisTypeItalic ">中间件</em>中。如果我们为这个 API 服务器这样做，它看起来会像</p>
+<p><em class="EmphasisTypeItalic "> wsgi.py </em></p>
+<pre>from apd.sensors.wsgi import set_up_config
+app = set_up_config()
+
+</pre>
+<p><em class="EmphasisTypeItalic ">启动服务器</em></p>
+<pre>&gt; pipenv run waitress-serve wsgi:app
+
+</pre>
+
+
+<h2 class="Heading">作为第三方扩展软件</h2>
+<p class="Para" id="Par132">我们在本章中所做的一切都不涉及改变<code>apd.sensors</code>包的 API，所以我们在核心包中创建的 API 服务器同样可能是由软件的核心维护者之外的人创建的。任何人都可以编写一个 WSGI 服务器来公开传感器值，并创建一个新的包，比如说<code>apd.apiserver</code>，它加载传感器并提供一个 API 端点来查询它们的值。</p>
+Note
+<p class="Para FirstParaInFormalPara" id="Par133">下一节，直到“修复我们代码中的序列化问题”标题，将考虑其他开发人员在尝试扩展我们的代码和他们可以使用的工具时的体验。在此之后，我们将回到我们自己可以改进的地方。</p>
+
+<p class="Para" id="Par134">然而，有时我们确实需要改变接口来扩展一个软件。如果我们回头看看我们的<code>Temperature</code>传感器，我们很早就做出了一个让 JSON 序列化变得微不足道的决定。value 函数返回一个浮点数，表示以摄氏度为单位的温度。JSON 可以序列化整数、字符串、列表和字典，但不能序列化日期时间或自定义对象。有一个名为 pint 的包，它专门表示物理常数，我们可能会选择使用<sup> <a epub:type="noteref" href="#Fn12" id="Fn12_source" role="doc-noteref"> 12 </a> </sup>，在这种情况下，温度传感器的值将不会是可序列化的。</p>
+<p class="Para" id="Par136">Pint 没有声明支持类型注释，因为它使用元类和从数据文件动态构造类型，很难提供一组有用的类型给最终用户。可以理解的是，pint 的开发者选择关注终端用户在控制单元集方面的灵活性，而不是针对类型检查进行优化。</p>
+<p><em class="EmphasisTypeItalic ">使用品脱值作为其返回类型的传感器</em></p>
+<pre>import os
+from typing import Optional, Any
+
+import pint
+
+ureg = pint.UnitRegistry()
+
+class Temperature(Sensor[Optional[Any]]):
+    title = "Ambient Temperature"
+
+    def __init__(self, board=None, pin=None):
+        self.board = os.environ.get("APD_SENSORS_TEMPERATURE_BOARD", "DHT22")
+        self.pin = os.environ.get("APD_SENSORS_TEMPERATURE_PIN", "D4")
+
+    def value(self) -&gt; Optional[Any]:
+        try:
+            import adafruit_dht
+            import board
+            sensor_type = getattr(adafruit_dht, self.board)
+            pin = getattr(board, self.pin)
+        except (ImportError, NotImplementedError, AttributeError):
+            # No DHT library results in an ImportError.
+            # Running on an unknown platform results in a
+            # NotImplementedError when getting the pin
+            return None
+        try:
+            return ureg.Quantity(sensor_type(pin).temperature, ureg.celsius)
+        except RuntimeError:
+            return None
+
+    @classmethod
+    def format(cls, value: Optional[Any]) -&gt; str:
+        if value is None:
+            return "Unknown"
+        else:
+            return "{:.3~P} ({:.3~P})".format(value, value.to(ureg.fahrenheit))
+
+    def __str__(self) -&gt; str:
+        return self.format(self.value())
+
+</pre>
+<p class="Para" id="Par138">由于 pint 没有声明支持类型检查，这些函数被定义为返回<code>Any</code>，这意味着它们不容易进行类型检查。在搜索类型定义时，我们还需要将 pint 添加到<code>setup.cfg</code>中作为一个被忽略的模块，以消除找不到它的警告:</p>
+<p><em class="EmphasisTypeItalic ">添加到 setup.cfg 的代码</em></p>
+<pre>[mypy-pint]
+ignore_missing_imports = True
+
+</pre>
+METACLASSES
+<p class="Para FirstParaInFormalPara" id="Par140">我前面提到过，Pint 使用元类和动态类型构造。这是一些相关的技术:它们都是定制类本身行为的方式，而不仅仅是它们的实例。在 pint 中，这些方法用于添加一个额外的钩子<code>after_init(...)</code>，它在<code>__init__(...)</code>函数之后被自动调用，并用于创建引用不同类变量的某些内置类型的无限数量的子类。</p>
+<p class="Para" id="Par141">本书的一些读者将期待关于元类使用的广泛讨论，将它们视为高级 Python 特性的缩影。我决定省略它们，因为这本书旨在解释专业 Python 程序员可以从中受益的特性。</p>
+<p class="Para" id="Par142">在我作为 Python 开发者的全部时间里，我从来没有理由创建一个元类，或者在我编写的类中显式地使用一个元类。我确实经常通过基类隐式地使用它们。虽然只有很少一部分 Python 开发人员需要创建元类，但是大多数开发人员在不知道的情况下与元类进行交互。</p>
+<p class="Para" id="Par143">Python 标准库模块<code>enum</code>和 ORM SQLAlchemy 是我所知道的良好元类使用的最好例子。两者都大量使用了元类，但是他们各自开发人员的技能保持了非常直观的界面，而牺牲了他们自己实现的可读性。如果你把元类做对了，用户甚至不会知道它们的存在。</p>
+<p>大多数关于元类的建议是，除非你知道你需要元类，否则你不需要使用它们。这有点绕圈，所以参考图<a href="#Fig3"> 5-3 </a>中的决策树，当我决定是否需要使用元类时，我会使用它。</p>
+<p><img alt="../images/481001_1_En_5_Chapter/481001_1_En_5_Fig3_HTML.jpg" src="../images/481001_1_En_5_Chapter/481001_1_En_5_Fig3_HTML.jpg" style="width:30em"/></p>
+<p>图 5-3</p><p class="SimplePara">用于决定是否使用元类的决策树</p>
+
+
+<p class="Para" id="Par145">这并不详尽，只是我对何时考虑元类的看法。可能有其他情况下它们是合适的解决方案，但是一般来说，我会认为它们<strong class="EmphasisTypeBold ">仅仅是</strong>用于声明性地向框架公开用户数据的结构。元类的大多数其他用途可以更直观地表示为标准 Python。我强烈建议优先编写一看就能理解的代码，而不是聪明的 T2 代码。</p>
+
+<p class="Para" id="Par146">float 和基于 pint 的实现之间的第一个实质性区别来自于<code>value()</code>函数，它采用温度的浮点表示，并将其标记为摄氏度的<code>Quantity</code>。与动态调度允许整数和字符串的加法表现不同的方式一样，它允许开发人员忘记正在使用的温度单位的确切类型，并对所有温度一视同仁。</p>
+<p class="Para" id="Par147">想象一下，我们也有一个连接到智能家庭恒温器的温度传感器，它只能返回华氏温度。我们很可能想要显示每个温度传感器和这个中央传感器之间的差异。如果我们使用浮点单位，我们必须在收集数据时将所有温度传感器标准化为相同的单位系统，或者在报告时使用外部知识，即一些读数使用不同的温标。Pint 允许我们无缝地处理来自不同测量系统的数字，而不需要显式转换。</p>
+<p class="Para" id="Par148">我们可以在<code>format(...)</code>方法中看到这一点，我们没有调用自定义类方法将摄氏温度转换为华氏温度，而是使用了 pint 本身的转换特性。<code>cls.celsius_to_fahrenheit(value)</code>变成了<code>value.to(ureg.fahrenheit)</code>，从而将逻辑分为收集和格式化。在原始形式中，format 方法要求其值为摄氏度；在后一种形式中，它可以根据值本身来判断需要进行什么转换(如果有的话)。</p>
+{:.3~P} FORMAT SPECIFICATION
+<p class="Para FirstParaInFormalPara" id="Par149">Python 中的<code>"{}".format(value)</code>样式格式允许值函数的类型定义自己的格式规范。Python 没有内置的<code>.3~P</code>规范:这是由 Pint 提供的。</p>
+<p class="Para" id="Par150"><code>__format__(self, spec)</code>方法允许类定义自己的格式规则。Pint 分别为 LaTeX、HTML 和 PrettyPrint 提供了<code>L</code>、<code>H</code>和 P 格式器，还有一个可选的<code>~</code>来使用缩写的单元名和标准的浮点格式选项来指定幅度部分。</p>
+<p class="Para" id="Par151">您编写的任何类也可以提供这些，因此我们的传感器可以定义一个<code>__format__(...)</code>方法来提供不同的格式化选项(如果相关的话)。一般来说，这个特性只对像 Pint 这样提供复杂数据存储类供其他程序员使用的项目有用。</p>
+
+<p>然而，所有这些优势都是有代价的。当我们试图访问 JSON API 时，我们看到一个 HTTP 错误 500 页面，并且在 web 服务器的日志中，我们得到一个以</p>
+<pre>TypeError: Object of type Quantity is not JSON serializable
+
+</pre>
+<p class="Para" id="Par153">为了让<code>value()</code>方法更加灵活，我们打破了在 flask 应用程序中所做的隐含假设:函数<code>value()</code>的结果可以被 JSON 序列化。在任何以前版本的文档中，我们都没有提到 value 方法只能返回 JSON 可序列化的类型。不能保证我们软件的其他用户没有使用插件架构做过类似的事情，所以在没有意识到的情况下，我们已经违反了语义版本化政策。</p>
+<p class="Para" id="Par154">我们应该创建一对新的方法，在传感器返回值和 JSON 可序列化表示之间进行转换，使<code>Sensor</code>类看起来像</p>
+<p><em class="EmphasisTypeItalic ">更新传感器类型，包括 JSON 序列化</em></p>
+<pre>class Sensor(Generic[T_value]):
+    title: str
+
+    def value(self) -&gt; T_value:
+        raise NotImplementedError
+
+    @classmethod
+    def format(cls, value: T_value) -&gt; str:
+        raise NotImplementedError
+
+    def __str__(self) -&gt; str:
+        return self.format(self.value())
+
+    @classmethod
+    def to_json_compatible(cls, value: T_value) -&gt; t.Any:
+        return json.dumps(value)
+
+    @classmethod
+    def from_json_compatible(cls, json_version: t.Any) -&gt; T_value:
+        return json.loads(value)
+
+</pre>
+<p class="Para" id="Par156">一对<code>to_json_compatible(...)</code>和<code>from_json_compatible(...)</code>方法负责将值转换成可以序列化的表示形式，然后再转换回来。它们是类方法，因为像<code>format(...)</code>一样，它们对值进行操作，而不需要那种类型的活动传感器可用。这些方法将用户推向返回 JSON 结构，这与我们的 API 输出非常吻合。</p>
+<p class="Para" id="Par157">API 的这一更新可以作为标准<code>Sensor</code>类的一部分，或者可以创建一个子类(如<code>SerializableSensor</code> <sup> <a epub:type="noteref" href="#Fn13" id="Fn13_source" role="doc-noteref"> 13 </a> </sup>)，允许用户选择只实现传感器 API 的旧版本。</p>
+<p class="Para" id="Par159">然而，在本节的开始，我们决定考虑如果我们将这个 API 服务器创建为第三方软件，并且无权更改<code>Sensor</code>类型的形式，会发生什么。因此，我们不能简单地决定改变传感器接口:如果我们在现实生活中处于这种情况，它将在我们无法控制的包中，其他人将实现该接口。</p>
+<h3 class="Heading">与对等方就临时签名达成一致</h3>
+<p class="Para" id="Par160">作为一名开发人员，如果想用自己不维护的代码来扩展一个接口，首先要确定的是，你觉得这个接口缺少了软件开发者定义的功能。作为一个最终用户，你可以添加任何你喜欢的函数到你的子类中，但是你不能轻易地命令类的其他作者实现相同的函数。</p>
+<p class="Para" id="Par161">当决定将哪些功能添加到接口时，您应该选择其他开发人员可能认为有用的功能。如果您选择既容易实现又普遍有用的函数，其他类作者更有可能选择实现它们。如果你选择了非常具体的方法，那么他们可能会认为不值得努力。</p>
+<p class="Para" id="Par162">因此，<code>to_json_compatible(...)</code>和<code>from_json_compatible(...)</code>，尽管是我们选择的软件维护者，可能会被其他开发人员认为太具体了。我认为一对<code>serialize(...)</code>和<code>deserialize(...)</code>方法更有可能被实现。</p>
+<p class="Para" id="Par163">我们可以编写 flask 函数来迭代传感器，如果可能的话，使用<code>serialize(...)</code>方法，否则返回到值。我们可以假设传感器的<code>serialize(...)</code>方法在传递有效数据时不会引发任何异常，但是我们知道不是所有的传感器都有这个方法，并且<code>json.dumps(...)</code>会因为一些传感器数据而失败，所以我们还需要通过三种方法来序列化值。</p>
+<p class="Para" id="Par164">首先，我们从传感器获取值，并将其传递给<code>serialize(...)</code>方法。如果用<code>AttributeError</code>失败了，那么很可能没有<code>serialize(...)</code>方法，所以用<code>json.dumps(...)</code>再试一次。如果这个操作因<code>TypeError</code>而失败，那么我们就不能序列化这个传感器，应该返回一个占位符。</p>
+<p><em class="EmphasisTypeItalic ">一个如何逐步支持一个</em> <em class="EmphasisTypeItalic ">序列化的例子(...)方法</em> <em class="EmphasisTypeItalic "> : </em></p>
+<pre>for sensor in get_sensors():
+    raw_value = sensor.value()
+    try:
+        value = {"serialized": sensor.serialize(raw_value)}
+    except AttributeError:
+        try:
+            value = {"serialized": json.dumps(raw_value)}
+        except TypeError:
+            value = {"error": f"Cannot serialize value {raw_value}"}
+    data[sensor.title] = value
+
+</pre>
+<p class="Para" id="Par166">这将允许所有现有的传感器继续运行，而无需任何代码更改，只要它们的值是 JSON serializable，否则将返回一个错误。任何实现<code>serialize(...)</code>方法的传感器都将返回该方法的结果。</p>
+<p class="Para" id="Par167">这种两个嵌套的 try/except 语句的情况有点难看，但很实用。在其他编程语言中，您可能通过检查<code>serialize(...)</code>方法的存在来实现相同的逻辑，而不是试图调用它。在 Python 中，尝试和调用方法并捕捉错误比检查它们是否存在更好；然而，有些时候检查是最好的选择。</p>
+<p>前面的例子仍然有一个潜在的故障模式。很有可能有人实现了一个<code>serialize()</code>方法，但是没有实现<code>deserialize(...)</code>方法，这是由于传感器 API 的一些其他流行消费者的要求。在这种情况下，我们最好还是使用<code>value()</code>方法，因为我们无法保证能够得到真实的值来进行分析。在这种情况下，我们必须检查这两种方法是否存在，而不是只尝试使用我们现在需要的一种方法。</p>
+<pre>for sensor in get_sensors():
+    raw_value = sensor.value()
+    if hasattr(sensor, "serialize") and hasattr(sensor, "deserialize"):
+        value = {"serialized": sensor.serialize(raw_value)}
+    else:
+        try:
+            value = {"serialized": json.dumps(raw_value)}
+        except TypeError:
+            value = {"error": f"Cannot serialize value {raw_value}"}
+    data[sensor.title] = value
+
+</pre>
+<p class="Para" id="Par169">当然，您的代码可能希望查找更复杂的方法和变量集合，以确定特定的功能集合是否存在。比如说<code>does_sensor_support_serialization(sensor: Sensor[Any]) -&gt; bool</code>，你可能会试图将这种内省整合成一个函数，并将其作为条件。这两种情况下代码路径出现分歧的次数越多，就越有诱惑力。</p>
+<p class="Para" id="Par170">Python 有一个称为抽象基类(ABCs)的特性，可以用来使这种类自省在 Python 上下文中感觉更自然。<em class="EmphasisTypeItalic ">是</em>经常使用的一种类型的类内省是检查一个对象是否是一个特定类或其子类的实例；ABCs 允许你用<code>isinstance(...)</code>调用代替更复杂的类内省。</p>
+
+<h3 class="Heading">抽象基类</h3>
+<p class="Para" id="Par171">抽象基类是一种特殊类型的类；它们不能直接实例化，但可以用作代码的父类。他们还可以“声明”其他类，以便将它们视为子类，方法是将它们显式注册为虚拟子类，或者编写一个函数来检查一个类，以确定它是否应该被视为子类。</p>
+<p class="Para" id="Par172">ABC 是另一个 Python 特性，人们通常认为它特别先进，因为他们以前没有理由使用它们。大多数开发人员没有使用过 ABC 是有道理的，因为它们对于常规的面向对象软件工程实践不实用的情况特别有用。一个有凝聚力的、统一的代码库通常没有理由使用 ABC，但是一个基于多个软件的庞大的应用程序可能会发现 ABC 是恰到好处的魔法，允许应用程序代码最小化技术债务的影响。</p>
+<p class="Para" id="Par173">ABC 采取的方法是覆盖<code>isinstance(...)</code>和<code>issubclass(...)</code>的逻辑。Python 中<code>issubclass(...)</code>的正常定义是，如果类定义将 B 列为父类，或者如果它列出的任何类本身都是 B 的子类，则类(A)是另一个(B)的子类。ABC 有两个额外的检查:<code>issubclass(A, B)</code>将返回 True，如果 A 是 B 的子类，如果在<code>issubclass</code>检查之前的任何时候调用了<code>B.register(A)</code>，或者如果<code>B.__subclasshook__(A)</code>返回<code>True</code>。</p>
+<p class="Para" id="Par174">此外，更熟悉的<code>isinstance(...)</code>函数的工作方式类似，但是使用的是一个类的实例，而不是类本身。大多数 Python 开发人员认为<code>isinstance(...)</code>在某些情况下是自然的代码行，但是会回避检查特定的方法集，而是更喜欢使用 duck typing，即使以可读性为代价。</p>
+<p class="Para" id="Par175">这是 ABC 最有用的地方；它们允许复杂的类自省以这样一种方式执行，这种方式对于不经意阅读代码的开发人员来说是自然的，对于熟悉代码的人来说是高度可维护的。</p>
+Note
+<p class="Para FirstParaInFormalPara" id="Par176">任何从<code>abc.ABC</code>类<sup> <a epub:type="noteref" href="#Fn14" id="Fn14_source" role="doc-noteref"> 14 </a> </sup>继承的类都遵循 ABCs 的特殊类规则，包括定制<code>isinstance(...)</code>行为的能力，但严格来说，如果一个类至少有一个用<code>@abc.abstractmethod</code>装饰器定义的抽象方法，那么它只是一个<em class="EmphasisTypeItalic ">抽象</em>基类。</p>
+
+<p>对于我们来说，为序列化行为创建一个抽象基类是很有用的，这样可以避免在 flask 路径中显式地检查两个相关的方法。将序列化和反序列化所需的方法定义为抽象方法。<sup> <a epub:type="noteref" href="#Fn15" id="Fn15_source" role="doc-noteref"> 15 </a> </sup></p><pre>class SerializableSensor(ABC):
+
+    @classmethod
+    @abstractmethod
+    def deserialize(cls, value):
+        pass
+
+    @classmethod
+    @abstractmethod
+    def serialize(cls, value):
+        pass
+
+</pre>
+
+<p>然后，我们可以使用它，要么通过子类化这个 ABC，要么通过注册一个实现。这两种方法如表<a href="#Tab2"> 5-2 </a>所示。</p><p>表 5-2</p><p class="SimplePara">创建被视为 SerializableSensor 的子类的 ExampleSensor 的两种方法的示例</p>
+
+
+<table style="border-collapse: collapse;border-top: 0.5pt solid ; border-bottom: 0.5pt solid ; border-left: 0.5pt solid ; border-right: 0.5pt solid ; "><colgroup><col class="tcol1 align-left"/>
+<col class="tcol2 align-left"/>
+</colgroup>
+<tbody><tr><td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><em class="EmphasisTypeItalic ">子类化方法</em></p>
+<p class="SimplePara"><code>class ExampleSensor(</code></p>
+<p class="SimplePara"><code>Sensor[bool],</code></p>
+<p class="SimplePara"><code>SerializableSensor</code></p>
+<p class="SimplePara"><code>):</code></p>
+<p class="SimplePara"><code>def value(self) -&gt; bool:</code></p>
+<p class="SimplePara"><code>return True</code></p>
+<p class="SimplePara"><code>@classmethod</code></p>
+<p class="SimplePara"><code>def format(cls, value: bool) -&gt; str:</code></p>
+<p class="SimplePara"><code>return "{}".format(value)</code></p>
+<p class="SimplePara"><code>@classmethod</code></p>
+<p class="SimplePara"><code>def serialize(cls, value: bool) -&gt; str:</code></p>
+<p class="SimplePara"><code>return "1" if value else "0"</code></p>
+<p class="SimplePara"><code>@classmethod</code></p>
+<p class="SimplePara"><code>def deserialize(cls, serialized: str) -&gt; bool:</code></p>
+<p class="SimplePara"><code>return bool(int(serialized))</code></p>
+</td>
+<td style="text-align: left;"><p class="SimplePara"><em class="EmphasisTypeItalic ">报名方式</em> <sup> <a epub:type="noteref" href="#Fn16" id="Fn16_source" role="doc-noteref"> 16 </a> </sup></p>
+<p class="SimplePara"><code>class ExampleSensor(Sensor[bool]):</code></p>
+<p class="SimplePara"><code>def value(self) -&gt; bool:</code></p>
+<p class="SimplePara"><code>return True</code></p>
+<p class="SimplePara"><code>@classmethod</code></p>
+<p class="SimplePara"><code>def format(cls, value: bool) -&gt; str:</code></p>
+<p class="SimplePara"><code>return "{}".format(value)</code></p>
+<p class="SimplePara"><code>@classmethod</code></p>
+<p class="SimplePara"><code>def serialize(cls, value: bool) -&gt; str:</code></p>
+<p class="SimplePara"><code>return "1" if value else "0"</code></p>
+<p class="SimplePara"><code>@classmethod</code></p>
+<p class="SimplePara"><code>def deserialize(cls, serialized: str) -&gt; bool:</code></p>
+<p class="SimplePara"><code>return bool(int(serialized))</code></p>
+<p class="SimplePara"><code>SerializableSensor.register(ExampleSensor)</code></p>
+</td>
+</tr>
+</tbody>
+</table>
+
+
+<p class="Para" id="Par182">每种方法都有优点和缺点。对于子类方法，父类提供助手函数或者默认实现<code>serialize(...)</code>和<code>deserialize(...)</code>。对于注册方法，碰巧实现正确方法的类可以标记为子类，而不必修改它们。当这些类不在您控制的代码中时，例如依赖关系中的类，这尤其有用。您不需要在使用子类化或注册方法之间进行选择；您可以从 ABC 中创建子类，同时将其他类别注册为虚拟子类。</p>
+<p class="Para" id="Par183">最后，最后一个可能的方法是子类 hook，其中不需要显式注册。为了实现这一点，我们向<code>SerializableSensor</code>类添加了一个新方法，它包含了确定一个类是否是<code>SerializableSensor</code>的逻辑。<code>__subclasshook__</code>类方法只接受一个参数，即要自省的类。</p>
+<p>它可以返回<code>True</code>或<code>False</code>来指定传递的类是否确实是 ABC 或<code>NotImplemented</code>的实例，以遵从正常的 Python 行为。<code>NotImplemented</code>选项是必不可少的，因为<code>__subclasshook__</code>不仅为<code>SerializableSensor</code>调用，也为任何将其声明为超类的类调用。返回<code>NotImplemented</code>可以避免为这些情况重新实现默认的 Python 逻辑。<sup> <a epub:type="noteref" href="#Fn17" id="Fn17_source" role="doc-noteref"> 17 </a> </sup></p><pre>    @classmethod
+    def __subclasshook__(cls, C):
+        if cls is SerializableSensor:
+            has_abstract_methods = [hasattr(C, name) for name in {"value", "serialize", "deserialize"}]
+            return all(has_abstract_methods)
+        return NotImplemented
+
+</pre>
+
+<p>ABC 也支持类型注释，所以 ABC 的最终版本应该包含适当的注释，以允许直接从基类继承的任何类的静态类型。我们将把<code>value(...)</code>函数添加到基类的抽象方法列表中。我们还可以将<code>SerializableSensor</code>基类设置为 generic，它必须采用与其配对的传感器的子类型兼容的子类型。这允许我们在静态类型级别确保<code>serialize</code>方法支持与<code>value(...)</code>函数相同的类型:</p>
+<pre>from abc import ABC, abstractmethod
+
+
+
+import typing as t
+
+T_value = t.TypeVar("T_value")
+
+class SerializableSensor(ABC, t.Generic[T_value]):
+
+    title: str
+
+    @abstractmethod
+    def value(self) -&gt; T_value:
+        pass
+
+    @classmethod
+    @abstractmethod
+    def serialize(cls, value: T_value) -&gt; str:
+        pass
+
+    @classmethod
+    @abstractmethod
+    def deserialize(cls, serialized: str) -&gt; T_value:
+        pass
+
+    @classmethod
+
+
+
+    def __subclasshook__(cls, C: t.Type[t.Any]) -&gt; t.Union[bool, "NotImplemented"]:
+        if cls is SerializableSensor:
+            has_abstract_methods = [hasattr(C, name) for name in {"value", "serialize", "deserialize"}]
+            return all(has_abstract_methods)
+        return NotImplemented
+
+</pre>
+
+<h3 class="Heading">后备策略</h3>
+<p class="Para" id="Par187">使用 ABCs 清理了在传感器能够处理序列化其自身值和需要使用回退实现之间切换的 if 语句，但是它不能帮助我们实现现有的回退逻辑。</p>
+<p class="Para" id="Par188">我们可以选择的各种序列化方法(包括 JSON)都提供了一对序列化和反序列化函数，通常称为<code>dumps(...)</code>和<code>loads(...)</code>。如果用户愿意，我们可以提供 mixin <sup> <a epub:type="noteref" href="#Fn18" id="Fn18_source" role="doc-noteref"> 18 </a> </sup>类供用户使用。</p>
+<p><em class="EmphasisTypeItalic ">一个 JSON 回退 mixin 类的例子</em></p>
+<pre>class JSONSerializedSensor(SerializableSensor[t.Any]):
+
+    @classmethod
+    def serialize(cls, value: t.Any) -&gt; str:
+        try:
+            return json.dumps(value)
+        except TypeError:
+            return json.dumps(None)
+
+    @classmethod
+    def deserialize(cls, serialized: str) -&gt; t.Any:
+        return json.loads(serialized)
+
+</pre>
+<p>这个类继承自<code>SerializableSensor</code> <code>,</code>，所以它遵循 ABCs 的特殊类处理规则。<code>SerializableSensor</code>类声明<code>value</code>、<code>serialize</code>和<code>deserialize</code>方法是必需的，但是我们只定义了其中的两个方法。这意味着<code>JSONSerializedSensor</code>仍然被认为是一个抽象基类，所以它不能被实例化。如果您试图实例化这个类，将会引发下面的<code>TypeError</code>:</p>
+<pre>TypeError: Can't instantiate abstract class JSONSerializedSensor with abstract methods value
+
+</pre>
+<h4 class="Heading">适配器模式</h4>
+<p class="Para" id="Par192"><code>JSONSerializedSensor</code>超类提供了一种将 JSON 序列化方法添加到我们自己的类中的方法，但是如果我们安装了其他传感器，它就没有用了，因为我们不能仅仅编辑它们来使用超类。</p>
+<p class="Para" id="Par193">解决这个问题的经典方法被称为适配器模式，是著名的四个软件工程模式之一。适配器是包装另一个对象以提供不同接口的对象。在这种情况下，我们可以为给定的传感器创建一个适配器，方法是将该传感器的一个实例存储为包装器实例的一个属性:</p>
+<p><em class="EmphasisTypeItalic ">使用 JSONSerializedSensor 从 ExampleSensor 到 SerializableSensor 的适配器示例</em></p>
+<pre>class SerializableExample(JSONSerializedSensor):
+
+    def __init__(self):
+        self.wrapped = ExampleSensor()
+        self.title = self.wrapped.title
+
+    def value(self) -&gt; bool:
+        return self.wrapped.value()
+
+</pre>
+<p class="Para" id="Par195"><code>serialize(...)</code>和<code>deserialize(...)</code>方法来自我们已经开发的<code>JSONSerializedSensor</code>，所以这个适配器模式允许我们使用 mixin 的实现作为我们的后备策略。对于<code>SerializedSensor</code>协议的任何其他部分实现也是如此，可能使用不同的序列化器。</p>
+<p>我们可以动态创建传感器类型，而不是为每个类创建一个后备传感器类型。这些动态包装的传感器必须假设底层的值类型是<code>Any</code>，因为我们没有具体的保证我们将传递给它什么类型的传感器。</p>
+<pre>def get_wrapped_sensor(sensor_class: Sensor[t.Any]) -&gt; SerializableSensor:
+    class Fallback(JSONSerializedSensor):
+
+        def __init__(self):
+            self.wrapped = sensor_class()
+            self.title = self.wrapped.title
+
+        def value(self) -&gt; t.Any:
+            return self.wrapped.value()
+
+    return Fallback
+
+</pre>
+<p>如果传感器不可序列化，我们用来迭代传感器并获取其值的代码现在可以更改为实例化此包装器:</p>
+<pre>for sensor in get_sensors():
+    raw_value = sensor.value()
+    sensor_class = type(sensor)
+    if not issubclass(sensor, SerializableSensor):
+        sensor_class = get_wrapped_sensor(sensor_class)
+
+    value = {"serialized": sensor_class.serialize(raw_value)}
+    data[sensor.title] = value
+
+</pre>
+
+<h4 class="Heading">动态类生成</h4>
+<p class="Para" id="Par198">这种方法不能精确地映射到经典的设计模式，部分原因是它在编译语言中是不可能的。这个方法动态地定义了一个新类，它继承了原始的<code>Sensor</code>类和序列化 mixin，创建了一个具有两者行为的新类。只有当两个类实现之间的方法定义没有重叠时，这种方法才可靠。尽管如此，它的优点是派生类可以被视为一个直接实现序列化的传感器，因为<code>format(...)</code>和<code>__str__()</code>方法仍然存在，而不是被包装器隐藏。</p>
+<p class="Para" id="Par199">许多 Python 开发人员发现这是一个很难做出的选择，因为适配器模式更简单、更明确，而动态类生成方法依赖于语言的行为，以一种对最终用户不透明的方式来解析方法，但是对于不经意的观察者来说，动态类生成方法似乎更简单。</p>
+<p><em class="EmphasisTypeItalic ">将 JSON 串行器实现合并到任意传感器的函数</em></p>
+<pre>def get_merged_sensor(sensor_class: Sensor[t.Any]) -&gt; SerializableSensor:
+    class Fallback(sensor_class, JSONSerializedSensor):
+        pass
+
+    return Fallback
+
+</pre>
+<p>然后，这个传感器类可以用在任何需要传感器的地方，以及任何需要可序列化传感器的地方。例如，我们可以提供一个<code>get_serializable_sensors()</code>方法，它复制了<code>get_sensors()</code>的实现，但是去掉了任何不可序列化的传感器。</p>
+<pre>def get_sensors() -&gt; t.Iterable[Sensor[t.Any]]:
+    sensors = []
+    for sensor_class in pkg_resources.iter_entry_points("apd.sensors.sensors"):
+        class_ = sensor_class.load()
+        if not issubclass(class_, SerializableSensor):
+            class _ = get_merged_sensor(class_)
+        sensors.append(t.cast(Sensor[t.Any], class_()))
+    return sensors
+
+</pre>
+
+<h4 class="Heading">其他序列化格式</h4>
+<p class="Para" id="Par202">我们前面所有的例子都使用 JSON 协议，所以任何不提供显式序列化<em class="EmphasisTypeItalic ">和</em>的类都不能与 JSON serializable 兼容。为此，我们需要使用更通用的序列化程序，比如 pickle。</p>
+Warning
+<p class="Para FirstParaInFormalPara" id="Par203">您经常会看到这样的警告:pickle 不应该用于不可信的数据，因为它不安全。这一点至关重要，因为精心编制的 pickle 变量会导致任意代码执行。如果一个传感器不知何故受到损害或恶意，并返回序列化值<code>c__builtin__\neval\n(V__import__("webbrowser").open("</code> <a href="https://advancedpython.dev/pickles"> <code>https://advancedpython.dev/pickles</code> </a> <code>")\ntR.</code>，那么当 API 消费者试图反序列化它时，这本书的网站将在 API 消费者的计算机上打开。</p>
+
+<p class="Para" id="Par204">我认为在这种情况下使用 pickles 是不合适的，因为传感器类型很少，而且它们返回的数据相对简单。包含以下讨论是因为序列化是一个常见问题，并且经常建议使用 pickles。</p>
+<p>一般来说，最好投入额外的工程努力来避免使用 pickles，但是如果您发现自己处于需要它们的情况下，您应该确保至少使用 HMAC 来认证它们，如表<a href="#Tab3"> 5-3 </a>所示。</p>
+<p>表 5-3</p><p class="SimplePara">签名和验证 pickle 的示例函数</p>
+
+
+<table style="border-collapse: collapse;border-top: 0.5pt solid ; border-bottom: 0.5pt solid ; border-left: 0.5pt solid ; border-right: 0.5pt solid ; "><colgroup><col class="tcol1 align-left"/>
+<col class="tcol2 align-left"/>
+</colgroup>
+<tbody><tr><td style="border-right: 0.5pt solid ; text-align: left;"><p class="SimplePara"><em class="EmphasisTypeItalic ">签泡菜</em></p>
+<p class="SimplePara"><code>import hashlib</code></p>
+<p class="SimplePara"><code>import hmac</code></p>
+<p class="SimplePara"><code>import pickle</code></p>
+<p class="SimplePara"><code>secret = bytearray([</code></p>
+<p class="SimplePara"><code>0xb2,0x56,0xc4,0x88,0x09,0xa0,0x8a,0x1e,</code></p>
+<p class="SimplePara"><code>0x28,0xe3,0xa3,0x25,0xe9,0x2b,0x98,0x6f,</code></p>
+<p class="SimplePara"><code>0x13,0x60,0xfb,0x26,0x06,0x9b,0x9d,0x6f,</code></p>
+<p class="SimplePara"><code>0x3a,0x01,0x2c,0x3f,0x9d,0x9f,0x72,0xcd</code></p>
+<p class="SimplePara"><code>])</code></p>
+<p class="SimplePara"><code>untrusted_pickle = pickle.dumps(2)</code></p>
+<p class="SimplePara"><code>digest = hmac.digest(</code></p>
+<p class="SimplePara"><code>secret,</code></p>
+<p class="SimplePara"><code>untrusted_pickle,</code></p>
+<p class="SimplePara"><code>hashlib.sha256</code></p>
+<p class="SimplePara"><code>)</code></p>
+<p class="SimplePara"><code>signed_pickle = digest + b":" + untrusted_pickle</code></p>
+</td>
+<td style="text-align: left;"><p class="SimplePara"><em class="EmphasisTypeItalic ">验证签名</em></p>
+<p class="SimplePara"><code>import hashlib</code></p>
+<p class="SimplePara"><code>import hmac</code></p>
+<p class="SimplePara"><code>import pickle</code></p>
+<p class="SimplePara"><code>secret = bytearray([</code></p>
+<p class="SimplePara"><code>0xb2,0x56,0xc4,0x88,0x09,0xa0,0x8a,0x1e,</code></p>
+<p class="SimplePara"><code>0x28,0xe3,0xa3,0x25,0xe9,0x2b,0x98,0x6f,</code></p>
+<p class="SimplePara"><code>0x13,0x60,0xfb,0x26,0x06,0x9b,0x9d,0x6f,</code></p>
+<p class="SimplePara"><code>0x3a,0x01,0x2c,0x3f,0x9d,0x9f,0x72,0xcd</code></p>
+<p class="SimplePara"><code>])</code></p>
+<p class="SimplePara"><code>digest, untrusted = received_pickle.split(</code></p>
+<p class="SimplePara"><code>b":", 1</code></p>
+<p class="SimplePara"><code>)</code></p>
+<p class="SimplePara"><code>expected_digest = hmac.digest(</code></p>
+<p class="SimplePara"><code>secret,</code></p>
+<p class="SimplePara"><code>untrusted,</code></p>
+<p class="SimplePara"><code>hashlib.sha256</code></p>
+<p class="SimplePara"><code>)</code></p>
+<p class="SimplePara"><code>if not hmac.compare_digest(digest, expected_digest):</code></p>
+<p class="SimplePara"><code>raise ValueError("Bad Signature")</code></p>
+<p class="SimplePara"><code>else:</code></p>
+<p class="SimplePara"><code>value = pickle.loads(untrusted)</code></p>
+</td>
+</tr>
+</tbody>
+</table>
+
+<p class="Para" id="Par206">这个方案是对称的；任何可以验证 pickle 的人也可以为任意 pickle 创建一个有效的签名，但这通常对于封闭系统来说已经足够了。因为它是对称的，所以保持秘密不被公众所知是非常重要的。这个秘密通常存储在一个配置文件或环境变量中，因此对于代码的每个用户来说是不同的。使用非对称密钥的更复杂的签名是可能的，但是很少值得花费工程上的努力来创建一个定义好的 JSON(或其他)模式来安全地反序列化数据。</p>
+
+
+<h3 class="Heading">将这一切结合在一起</h3>
+<p>在我们的平行世界中，我们试图将 WSGI 服务器改造到现有的传感器生态系统中，我们现在已经拥有了所需的所有代码(清单<a href="#PC48"> 5-12 </a>)。web 服务器代码的大部分与我们真实的集成 Flask 应用程序的代码相同；web 服务器代码中唯一显著的变化是在<code>sensor_values()</code>视图中添加了一个 if 语句和匹配的 else 子句，总共添加了三行视图代码。我们已经成功地将类自省和回退逻辑封装到支持代码中，这些代码可以拆分成一个实用的 Python 文件，让它发挥自己的魔力。</p>
+<pre>from abc import ABC, abstractmethod
+import typing as t
+import json
+
+import flask
+
+from apd.sensors.sensors import Sensor
+from apd.sensors.cli import get_sensors
+from apd.sensors.wsgi import require_api_key, set_up_config
+
+app = flask.Flask(__name__)
+
+T_value = t.TypeVar("T_value")
+
+class SerializableSensor(ABC, t.Generic[T_value]):
+
+    title: str
+
+    @abstractmethod
+    def value(self) -&gt; T_value:
+        pass
+
+    @classmethod
+    @abstractmethod
+    def serialize(cls, value: T_value) -&gt; str:
+        pass
+
+    @classmethod
+    @abstractmethod
+
+
+
+    def deserialize(cls, serialized: str) -&gt; T_value:
+        pass
+
+    @classmethod
+    def __subclasshook__(cls, C: t.Type[t.Any]) -&gt; t.Union[bool, "NotImplemented"]:
+        if cls is SerializableSensor:
+            has_abstract_methods = [
+                hasattr(C, name) for name in {"value", "serialize", "deserialize"}
+            ]
+            return all(has_abstract_methods)
+        return NotImplemented
+
+class JSONSerializedSensor(SerializableSensor[t.Any]):
+    @classmethod
+    def serialize(cls, value: t.Any) -&gt; str:
+        try:
+            return json.dumps(value)
+        except TypeError:
+            return json.dumps(None)
+
+    @classmethod
+    def deserialize(cls, serialized: str) -&gt; t.Any:
+        return json.loads(serialized)
+
+class JSONWrappedSensor(JSONSerializedSensor):
+    def __init__(self, sensor: Sensor[t.Any]):
+        self.wrapped = sensor
+        self.title = sensor.title
+
+    def value(self) -&gt; t.Any:
+        return self.wrapped.value()
+
+def get_serializable_sensors() -&gt; t.Iterable[SerializableSensor[t.Any]]:
+    sensors = get_sensors()
+    found = []
+    for sensor in sensors:
+        if isinstance(sensor, SerializableSensor):
+            found.append(sensor)
+        else:
+            found.append(JSONWrappedSensor(sensor))
+    return found
+
+
+
+
+@app.route("/sensors/")
+@require_api_key
+def sensor_values() -&gt; t.Tuple[t.Dict[str, t.Any], int, t.Dict[str, str]]:
+    headers = {"Content-Security-Policy": "default-src 'none'"}
+    data = {}
+    for sensor in get_serializable_sensors():
+        data[sensor.title] = sensor.serialize(sensor.value())
+    return data, 200, headers
+
+if __name__ == "__main__":
+    import wsgiref.simple_server
+
+    set_up_config(None, app)
+
+    with wsgiref.simple_server.make_server("", 8000, app) as server:
+        server.serve_forever()
+
+Listing 5-12A possible implementation of WSGI server and fallback encoding in a third-party piece of code
+
+
+</pre>
+
+
+<h2 class="Heading">修复代码中的序列化问题</h2>
+<p class="Para" id="Par208">撇开我们如何在第三方代码中解决这个问题不谈，我们也应该在<code>apd.sensors</code>的主线代码库中解决这个问题。当我们希望将此作为第三方工具时，我们有强烈的动机选择通常有用的函数签名，因此选择了特定的<code>serialize</code>和<code>deserialize</code>方法，其他用户可能会使用它们(例如)来记录文件。现在我们回到了我们作为软件维护者的角色，我们在决定界面应该是什么的时候有了更多的灵活性。我们仍然希望代码易于实现，但是我们有更大的权力来规定我们认为最好的功能。</p>
+<p class="Para" id="Par209">我非常相信，在这里限制我们自己只使用 JSON API 是有益的，因为它使原始数据更容易理解。如果我们的接口有一个<code>serialize(...)</code>，那么我们就不能保证输出是人类可读的。因此，我不会创建<code>serialize(...)</code>和<code>deserialize(...)</code>函数，而是创建将值缩减为 JSON 可序列化的值的函数，并从这些值重新构建它。</p>
+<p class="Para" id="Par210">我们可以用我们想要的任何默认实现在<code>Sensor</code>基类上定义这些。目前还不能保证任何给定的传感器都与 JSON 序列化兼容，所以默认的实现必须是引发异常。</p>
+<p><em class="EmphasisTypeItalic ">添加到</em> <em class="EmphasisTypeItalic ">传感器基类</em>的其他方法</p>
+<pre>    @classmethod
+    def to_json_compatible(cls, value: T_value) -&gt; Any:
+        raise NotImplementedError
+
+    @classmethod
+    def from_json_compatible(cls, json_version: Any) -&gt; T_value:
+        raise NotImplementedError
+
+</pre>
+<p>我们现在需要为我们现有的每个传感器提供这两种方法的实现。有三种不同的代码路径需要更新。第一种是针对大多数已经与 JSON 兼容的传感器。为此，我们可以创建一个新的 mixin 类:</p>
+<pre>class JSONSensor(Sensor[T_value]):
+    @classmethod
+    def to_json_compatible(cls, value: T_value) -&gt; t.Any:
+        return value
+
+    @classmethod
+    def from_json_compatible(cls, json_version: t.Any) -&gt; T_value:
+        return cast(JSONT_value, json_version)
+
+</pre>
+TYPING OF JSON VALUES
+<p>在 Python 类型提示中没有简单的方法来表示 JSON 兼容，因为 JSON 兼容的定义本身就是递归的。只有当列表的所有元素都是 JSON 兼容的，例如。我们<em class="EmphasisTypeItalic ">可以</em>通过将 JSON 的类型限制到最大递归级别，来尝试越来越接近 JSON 兼容类型的定义，比如</p>
+<pre>from typing import *
+
+JSON_0 = Union[str, int, float, bool, None]
+JSON_1 = Union[Dict[str, JSON_0], List[JSON_0], JSON_0]
+JSON_2 = Union[Dict[str, JSON_1], List[JSON_1], JSON_1]
+JSON_3 = Union[Dict[str, JSON_2], List[JSON_2], JSON_2]
+JSON_4 = Union[Dict[str, JSON_3], List[JSON_3], JSON_3]
+JSON_5 = Union[Dict[str, JSON_4], List[JSON_4], JSON_4]
+JSON_like = JSON_5
+
+</pre>
+<p>我们用于 Sensor 的 T_ <code>value</code>泛型引用可以是任何类型，但是我们希望我们的 JSONSensor 超类只与 JSON 兼容的类型一起工作，因此需要一个不同的带有 bind 参数的 TypeVar:</p>
+<pre>JSONT_value = TypeVar(“JSONT_value”, bound=JSON_like)
+
+</pre>
+<p class="Para" id="Par215">在我看来，这种绕过类型检查器的做法是适得其反的。打字是用来帮助开发人员的，而不是让他们跳来跳去。如果有些东西很难用静态类型提示来表达，那么你应该用文档和注释来解释清楚。你应该相信开发者会做正确的事情。因此，我将使用<code>Any</code>作为类型提示来表示 JSON 兼容的 Python 对象。</p>
+
+<p>我们编写的大多数传感器都可以透明地使用<code>JSONSensor</code>；不过<code>PythonVersion</code>传感器的类型很奇怪。它使用无法直接实例化的自定义类。Python 的这个实现细节并不重要，但是我们需要稍微改变一下传感器，以便能够从 JSON 转换回行为类似于实际值的东西。</p>
+<pre>from typing import NamedTuple
+
+version_info_type = NamedTuple(
+    "version_info_type",
+    [
+        ("major", int),
+        ("minor", int),
+        ("micro", int),
+        ("releaselevel", str),
+        ("serial", int),
+    ],
+)
+
+class PythonVersion(JSONSensor[version_info_type]):
+    title = "Python Version"
+
+    def value(self) -&gt; version_info_type:
+        return version_info_type(*sys.version_info)
+
+    @classmethod
+    def format(cls, value: version_info_type) -&gt; str:
+        if value.micro == 0 and value.releaselevel == "alpha":
+            return "{0.major}.{0.minor}.{0.micro}a{0.serial}".format(value)
+        return "{0.major}.{0.minor}".format(value)
+
+</pre>
+<p class="Para" id="Par217">这使用了一个类型化的命名元组来模拟真实的<code>sys.version_info</code>，否则我们将无法实现<code>from_json_compatible(...)</code>来返回与<code>value()</code>完全相同的值。</p>
+<p class="Para" id="Par218">最后，温度和太阳能传感器都使用物理量作为它们的值类型，因此它们将使用 pint 的单位系统作为它们的值，并且需要一对定制的 JSON 方法。</p>
+<p><em class="EmphasisTypeItalic ">温度的 JSON 方法对</em></p>
+<pre>class Temperature(Sensor[Optional[Any]]):
+
+    ...
+
+    @classmethod
+    def to_json_compatible(cls, value: Optional[Any]) -&gt; Any:
+        if value is not None:
+            return {"magnitude": value.magnitude, "unit": str(value.units)}
+        else:
+            return None
+
+    @classmethod
+    def from_json_compatible(cls, json_version: Any) -&gt; Optional[Any]:
+        if json_version:
+            return ureg.Quantity(json_version["magnitude"], ureg[json_version["unit"]])
+        else:
+            return None
+
+</pre>
+<p class="Para" id="Par220">在创建这个版本的软件时，我们已经获得了相当数量的传感器支持代码；是时候把它从传感器的实现中移走了，让代码库更容易导航。</p>
+<h3 class="Heading">整理</h3>
+<p class="Para" id="Par221"><code>sensors.py</code>文件目前有两个基类和一些实际的传感器。只在这个文件中列出传感器更清楚，所以我将把支持代码移到 base.py。</p>
+<p>让 JSON API 使用与传感器入口点相同的键也是一个好主意。这将使反序列化数据变得容易得多，因为我们可以轻松地查找定义它的传感器类。为此，添加了一个新的名称属性。列表<a href="#PC55"> 5-13 </a>显示了<code>Sensor</code>基类的完整定义。</p>
+<pre>import typing as t
+
+T_value = t.TypeVar("T_value")
+
+class Sensor(t.Generic[T_value]):
+    name: str
+    title: str
+
+    def value(self) -&gt; T_value:
+        raise NotImplementedError
+
+    @classmethod
+    def format(cls, value: T_value) -&gt; str:
+        raise NotImplementedError
+
+    def __str__(self) -&gt; str:
+        return self.format(self.value())
+
+    @classmethod
+    def to_json_compatible(cls, value: T_value) -&gt; t.Any:
+        raise NotImplementedError()
+
+    @classmethod
+    def from_json_compatible(cls, json_version: t.Any) -&gt; T_value:
+        raise NotImplementedError()
+
+class JSONSensor(Sensor[T_value]):
+    @classmethod
+    def to_json_compatible(cls, value: T_value) -&gt; t.Any:
+        return value
+
+    @classmethod
+    def from_json_compatible(cls, json_version: t.Any) -&gt; T_value:
+        return t.cast(T_value, json_version)
+
+Listing 5-13Definition of the sensor base class from base.py
+
+
+</pre>
+
+
+<h2 class="Heading">版本控制 API</h2>
+<p class="Para" id="Par223">作为这些变化的一部分，我们已经改变了 API 的行为，尽管是以最小的方式。唯一面向用户的区别是 API 值现在由传感器 ID，而不是人类可读的名称来键入。我们需要创建一个新的面向用户的 API 版本，因为它的行为与以前的版本不同。</p>
+<p class="Para" id="Par224">新的 API 版本通常是通过在一个稍微不同的 URL 上提供不同的 API，包含版本号。我们可以适当地改变 API，但是任何依赖 API 的人都会突然看到不同的行为。对于个人项目来说，这可能不是问题，但是对公众或公司内部可用的 API 可能会有用户，你不能事先与他们讨论更改。</p>
+Tip
+<p class="Para FirstParaInFormalPara" id="Par225">有能力支持旧的 API 版本并不意味着你必须支持它们。很有可能你已经有了<code>/v/1.0</code>和<code>/v/1.1</code>，但是后来决定发布<code>/v/2.0</code>，它与其他两个非常不同。在这种情况下，您可能会决定完全删除旧的 API 版本。在 URL 中包含版本号并不强制您维护对旧版本的支持，但是如果您不按版本来确定 API 端点的范围，那么如果您以后选择维护旧版本，就很难维护旧版本。</p>
+
+<p class="Para" id="Par226">在对 API 进行版本控制时，您需要决定如何处理 bug。总的来说，有两种策略。要么你可以把 bug 留在原地，坚持让人们升级到最新版本的 API，要么你可以用不引人注目的方式修复 bug。将 bug 留在原处是一个更常见的解决方案，因为修复它们要做的工作要多得多。不过，旧 API 版本中的安全漏洞应该<strong class="EmphasisTypeBold ">总是</strong>被修复。</p>
+<p class="Para" id="Par227">我们在本章中所做的更改是处理温度和湿度传感器的序列化，现在我们已经将它们更改为使用 pint。最初的 API 以摄氏度为单位返回这些值；新函数返回一个包含温度系统的字典。</p>
+<p class="Para" id="Par228">在本章附带的代码版本中，我应用了一个修复程序，通过捕捉<code>TypeError</code>并在需要时跳过传感器，来防止任何无法 JSON 序列化的传感器出现在 v1.0 API 输出中。这意味着温度和湿度传感器将不再出现在那里，只出现在 v2 API 中。是否花费额外的时间和精力在 v1.0 API 中为 pint 对象添加一个特例在很大程度上取决于用户的需求。</p>
+<p class="Para" id="Par229">为了方便托管多个版本的 API，我们将视图移动到一个以 API 版本命名的新文件中，并针对该 API 版本的<code>flask.Blueprint</code>实例注册它们，而不是直接针对<code>flask.Flask</code>对象。Flask blueprints 是一组可以添加到应用程序中的相关 URL。使用蓝图允许我们编写在主网站的子路径中工作的视图代码，而不必修改所有单独的 URL 来包含 API 版本号:</p>
+<p><em class="EmphasisTypeItalic "> v10.py </em></p>
+<pre>version = flask.Blueprint(__name__, __name__)
+
+@version.route("/sensors/")
+@require_api_key
+def sensor_values() -&gt; t.Tuple[t.Dict[str, t.Any], int, t.Dict[str, str]]:
+    ...
+
+</pre>
+<p><em class="EmphasisTypeItalic "> __init__。py </em></p>
+<pre>app = flask.Flask(__name__)
+app.register_blueprint(v10.version, url_prefix="/v/1.0")
+
+</pre>
+<p>wsgi 目录的文件结构对于每个 API 版本都有不同的文件，目前是<code>v10.py</code>和<code>v20.py</code>，以及一些支持代码，比如认证函数。</p>
+<pre>src/apd/sensors/wsgi/
+├── __init__.py
+├── base.py
+├── serve.py
+├── v10.py
+└── v20.py
+
+</pre>
+<p class="Para" id="Par233">这里我给了 API 一个简单的版本号，但是许多公共 API 使用日历版本号作为它们的版本号。这可能对用户更友好，但这确实是个人偏好的问题。</p>
+<h3 class="Heading">易测性</h3>
+<p class="Para" id="Par234">当支持 API 的多个版本时，我们还需要测试它们。即使您认为旧版本的正常工作并不重要，您仍然需要确保旧版本的 API 中没有引入安全问题。</p>
+<p>我通过为 API 的每个版本创建一个类来实现这一点。这允许设置 fixtures 来避免必须让每个测试指定它所针对的 API 版本。例如，我们已经有了一个测试来检查在访问传感器时丢失 API 键是否会导致 HTTP 禁止错误。它被写成</p>
+<pre>@pytest.mark.functional
+def test_sensor_values_fails_on_missing_api_key(self, api_server):
+    response = api_server.get("/sensors/", expect_errors=True)
+    assert response.status_code == 403
+    assert response.json["error"] == "Supply API key in X-API-Key header"
+
+</pre>
+<p class="Para" id="Par236">这个测试假设 api_server 是一个 WebTest 应用程序，它在根目录下安装了 api。当我们没有命名空间 API 版本时，这很好，但是似乎我们必须为<code>/v/1.0/sensors</code>和<code>/v/2.0/sensors</code>编写这个测试。每个 API 版本都有一个支持类，这意味着我们可以将该版本的蓝图安装在 Flask 应用程序的根目录下，而不是针对将蓝图安装在不同前缀上的复合应用程序进行测试。</p>
+<p><em class="EmphasisTypeItalic ">将</em> <code>/v/1.0</code> <em class="EmphasisTypeItalic ">作为根</em>的测试类</p>
+<pre>from apd.sensors.wsgi import v10
+
+class Testv10API:
+    @pytest.fixture
+    def subject(self, api_key):
+        app = flask.Flask("testapp")
+        app.register_blueprint(v10.version)
+        set_up_config({"APD_SENSORS_API_KEY": api_key}, to_configure=app)
+        return app
+
+    @pytest.fixture
+    def api_server(self, subject):
+        return TestApp(subject)
+
+</pre>
+<p><code>TestV20API</code>类做了同样的事情，但是使用了<code>v20.version</code>而不是<code>v10.version</code>，使得每个类中的测试在它们的 HTTP 名称空间的根中看到合适的 API 版本。然后，前面缺失的 API 关键测试可以被分解到一个 mixin 类中，以及在不同版本的 API 中工作相同的任何其他测试。对我们来说，这将是处理 API 认证的两个测试。</p>
+<pre>class CommonTests:
+    @pytest.mark.functional
+    def test_sensor_values_fails_on_missing_api_key(self, api_server):
+        response = api_server.get("/sensors/", expect_errors=True)
+        assert response.status_code == 403
+        assert response.json["error"] == "Supply API key in X-API-Key header"
+
+    @pytest.mark.functional
+    def test_sensor_values_require_correct_api_key(self, api_server):
+        response = api_server.get(
+            "/sensors/", headers={"X-API-Key": "wrong_key"}, expect_errors=True
+        )
+        assert response.status_code == 403
+        assert response.json["error"] == "Supply API key in X-API-Key header"
+
+</pre>
+<p class="Para" id="Par239">由于测试类名不以<code>Test</code>开头，pytest runner 没有将这些测试视为独立的测试，这很好，因为它们依赖于一个名为<code>api_server</code>的 fixture，这个 fixture 没有定义。然而，当我们添加<code>CommonTests</code>作为<code>TestV10API</code>和<code>TestV20API</code>的基类时，这些测试函数被两个类继承。pytest 只检查以单词<code>Test</code>开头的测试类，所以<code>CommonTests</code>类不会被孤立执行。它包含的方法由特定于版本的类继承，这些类有适当的装置来支持它们。</p>
+
+
+<h2 class="Heading">摘要</h2>
+<p class="Para" id="Par240">我们在这一章已经讲了很多，介绍了 Flask 的 web APIs，并讲述了我们如何扩展传感器接口来克服 JSON 序列化的限制。Python web 开发的生态系统是巨大的，许多书籍只深入这个世界的一个小方面。</p>
+<p class="Para" id="Par241">尽管我们确实需要一个 HTTP API 来完成我们的传感器聚合程序，但它从根本上说并不是一个 web 应用程序。我鼓励任何有兴趣在网上学习 Python 的人尝试一些流行的框架(比如 Django、Pyramid 和 Flask ),了解它们的优缺点。Django 被誉为全方位 web 开发的良好框架，这是正确的，但 Flask 的最小风格和 Pyramid 的表达能力使它们成为选择平台时需要注意的有价值的工具。</p>
+<p class="Para" id="Par242">我们还讨论了作为系统的原始作者和使用抽象基类的第三方来扩展类定义的实用性。最后，我们还介绍了许多 Python 代码的常用方法，比如用于消息认证的 HMAC 和用于扩展函数行为的 decorators。</p>
+<p class="Para" id="Par243">传感器 API 已经以打破向后兼容性的方式进行了更改，因此软件包的版本号已经更新为 2.0.0，并且文档现在解释了如何访问 API。在下一章中，我们将使用这个新的 HTTP API 开始整理一个中心源中的信息。</p>
+<h3 class="Heading">额外资源</h3>
+<p>如果您对 web 编程特别感兴趣，下面的资源提供了一些关于我们已经讨论过的主题的附加信息，值得一读:</p>
+<ul class="UnorderedListMarkNone"><li><p class="Para" id="Par245">WSGI 规范是针对 web 应用程序的特定于 Python 的标准。很多背景资料可以在<a href="http://wsgi.org"> <code>http://wsgi.org</code> </a>找到。</p></li>
+<li><p class="Para" id="Par246">Flask web 框架的完整文档位于<a href="https://flask.palletsprojects.com/"> <code>https://flask.palletsprojects.com/</code> </a>。</p></li>
+<li><p class="Para" id="Par247">我推荐将<a href="http://www.djangoproject.com/"> <code>www.djangoproject.com/</code> </a>和<a href="https://trypyramid.com/"> <code>https://trypyramid.com/</code> </a>作为其他 Python web 框架来特别关注。</p></li>
+<li><p class="Para" id="Par248">我用于物理单位的品脱库在<a href="https://pint.readthedocs.io/"> <code>https://pint.readthedocs.io/</code> </a>有例子和高级用法信息。</p></li>
+<li><p class="Para" id="Par249">JWT 项目(<a href="https://jwt.io/"> <code>https://jwt.io/</code> </a>)详细介绍了一种使用 HMAC 进行认证的更复杂的方法，并有许多例子和样本代码。</p></li>
+<li><p class="Para" id="Par250">一些量产级的 WSGI 服务器有<a href="https://gunicorn.org/"> <code>https://gunicorn.org/</code> </a>、<a href="https://modwsgi.readthedocs.io/en/develop/"> <code>https://modwsgi.readthedocs.io/en/develop/</code> </a>、<a href="https://pypi.org/project/waitress/"> <code>https://pypi.org/project/waitress/</code> </a>。</p></li>
+<li><p class="Para" id="Par251">关于 WSGI 应用测试库 WebTest 的信息在<a href="https://docs.pylonsproject.org/projects/webtest/"> <code>https://docs.pylonsproject.org/projects/webtest/</code> </a>。</p></li>
+</ul>
+
+
+
+<aside aria-label="Footnotes" class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par13">许多浏览器只会整体呈现纯文本数据，但会在等待其余部分时呈现部分 HTML 响应。</p>
+
+ 
+
+<a href="#Fn2_source">2</a><p class="Para" id="Par18"><code>curl http://localhost:8000/ | jq</code>在安装了相关程序的 Linux 或 macOS 系统上。您同样可以在浏览器中打开这个 URL，并在那里查看数据。</p>
+
+ 
+
+<a href="#Fn3_source">3</a><p class="Para" id="Par26">授权与认证相对。<em class="EmphasisTypeItalic ">授权</em>是决定一个给定的人是否被允许做某事的过程；<em class="EmphasisTypeItalic ">认证</em>是确定用户是否是他们所声称的那个人的过程。这些通常简称为 authn 和 authz(这可能会让习惯英式拼写的人感到困惑)。</p>
+
+ 
+
+<a href="#Fn4_source">4</a><p class="Para" id="Par46">Flask 提供了类型注释，所以在定义这个函数时的一些错误会被 mypy 捕获。例如，如果您想提供一个状态，它必须是一个整数。返回<code>t.Tuple[t.Dict, str]</code>会导致类型检查错误。</p>
+
+ 
+
+<a href="#Fn5_source">5</a><p class="Para" id="Par56">从技术上讲，任何值都可以被返回，但是对于最终用户来说，返回没有兼容调用签名的值是非常令人困惑的。</p>
+
+ 
+
+<a href="#Fn6_source">6</a><p class="Para" id="Par64">此函数的关联作为属性存储在函数及其代码对象上。值的名称存储为<code>inner_function.__code__.co_freevars</code>，它们的值存储为<code>inner_function.__closure__</code>上的单元格对象，这些单元格对象本身有一个<code>cell_contents</code>属性。“自由变量”这个名字指的是“自由变量”——在作用域中使用但没有在作用域中定义的变量。除了好奇 Python 解释器是如何工作的，你不需要看这些。</p>
+
+ 
+
+<a href="#Fn7_source">7</a><p class="Para" id="Par68"><em class="EmphasisTypeItalic ">隐藏</em>是定义一个新变量的名字，这个变量与其他可访问的变量同名。例如，<code>list = [1, 2,3 ]</code>隐藏了内置的<code>list</code>类型，使得不能在该范围内使用<code>list(...)</code>。</p>
+
+ 
+
+<a href="#Fn8_source">8</a><p class="Para" id="Par91">这些还是个人口味的问题；如果你觉得有用，就使用它们。因为这个函数不是公共 API 的一部分，所以对代码的用户没有额外的好处，只是对维护它的人有好处。</p>
+
+ 
+
+<a href="#Fn9_source">9</a><p class="Para" id="Par97">注意，这并不能保证是相同的数据，只是相同的类型。</p>
+
+ 
+
+<a href="#Fn10_source">10</a><p class="Para" id="Par104">HMAC 摘要是一种加密哈希，用于根据共享密钥验证数据。他们几乎不可能伪造，所以他们经常被用在认证系统中。</p>
+
+ 
+
+<a href="#Fn11_source">11</a><p class="Para" id="Par118">如果 API 键是随机生成的，我们还必须确保主题 fixture 获得与单个测试方法相同的值。这是在 pytest 中用 fixture 作用域完成的，在本书的第<a href="11.html"> 11 </a>章中有解释。</p>
+
+ 
+
+<a href="#Fn12_source">12</a><p>事实上，如果我不是抱着很快就会添加 JSON 支持的想法编写代码，我会这么做的。我经常使用品脱和 Python REPL 或 Jupyter 作为长度、面积和电气值的计算器，例如计算电路中使用的正确电阻:</p>
+<pre>&gt;&gt;&gt; import pint
+&gt;&gt;&gt; ureg = pint.UnitRegistry()
+&gt;&gt;&gt; Vs = 3.3 * ureg.volt
+&gt;&gt;&gt; Vf = 1.85 * ureg.volt
+&gt;&gt;&gt; I = 20 * ureg.milliamp
+&gt;&gt;&gt; R = (Vs - Vf) / I
+&gt;&gt;&gt; print(R.to(ureg.ohm))
+72.49999999999999 ohm
+
+</pre>
+
+ 
+
+<a href="#Fn13_source">13</a><p class="Para" id="Par158">像<em class="EmphasisTypeItalic ">授权</em>一样，serialize 这个词传统上在 API 中使用美国英语惯例拼写，所以用 z 而不是 s。</p>
+
+ 
+
+<a href="#Fn14_source">14</a><p class="Para" id="Par177">任何被定义为<code>class MyClass(metaclass=abc.ABCMeta)</code>的都一样，但我不认为这种方法是清晰的。Python 使用元类来实现 ABC，因为它需要能够自省已经定义的方法，以决定一个类是否可以被实例化。</p>
+
+ 
+
+<a href="#Fn15_source">15</a><p class="Para" id="Par179">抽象方法是 ABCs 的另一个有用的特性。它们防止任何超类中包含 ABC 的类被实例化。它们必须被子类覆盖，否则该类将无法实例化。Python 开发人员通常会创建方法<code>raise NotImplementedError</code>来传达方法必须被覆盖，但是这种方法通过将错误移到对象被实例化的时候，而不是第一次使用方法的时候，使得错误更容易被发现。</p>
+
+ 
+
+<a href="#Fn16_source">16</a><p class="Para" id="Par181">注册函数<code>SerializableSensor.register(other_class)</code>将待注册的类作为单个参数，并返回同一个类，这意味着它符合类装饰器的定义。因此，您也可以直接在类定义前写一行<code>@SerializableSensor.register</code>。</p>
+
+ 
+
+<a href="#Fn17_source">17</a><p class="Para" id="Par185">为了演示为什么这很重要，假设我们使用<code>SerializableSensor</code>作为<code>Temperature</code>传感器的基类。我们希望<code>isinstance(obj, SerializableSensor)</code>使用子类 hook，但是如果 obj 是<code>Temperature</code>传感器的实例，我们只希望<code>isinstance(obj, Temperature)</code>返回 true，而不是任何需要方法成为<code>SerializableSensor</code>的实例。</p>
+
+ 
+
+<a href="#Fn18_source">18</a><p class="Para" id="Par189">mixin 类是一个超类的名称，它为类的作者提供了一些相关的继承方法。大多数时候，你看到一个类有多个超类，这是因为它们中的一些是混合的。</p>
+
+ 
+
+</aside>
+
+
+</body>
+</html>

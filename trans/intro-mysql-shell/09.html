@@ -1,0 +1,566 @@
+<html lang="en">
+<head><title>Example: Group Replication Setup and Administration</title>
+<meta content="text/html; charset=utf-8" http-equiv="content-type"/>
+<link href="../css/springer_epub.css" rel="styleSheet" type="text/css"/>
+</head>
+<body epub:type="chapter">
+ 
+<!--Begin Abstract--><h1 class="ChapterTitle" lang="en">9.示例:组复制设置和管理</h1>
+
+ 
+<!--End Abstract--><p class="Para" id="Par2">正如我们在上一章中了解到的，组复制是 MySQL 复制的一种发展，旨在使数据复制更加健壮和可靠。与对 InnoDB 存储引擎的修改(全部隐藏在罩下)一起，组复制实现了高可用性功能，这在过去需要专门的、有时是定制的产品、中间件和定制的应用程序才能实现。</p>
+<p class="Para" id="Par3">在本章中，我们将更深入地了解组复制的组成部分。之后，我们将在动手演练中对组复制进行指导。</p>
+<h2 class="Heading">入门指南</h2>
+<p class="Para" id="Par4">设置 MySQL 组复制类似于设置 MySQL 复制的过程，这可能不会让您感到惊讶。毕竟，组复制建立在 MySQL 复制的基础上。在下一节中，我们将看到组复制的演示，但我们不会集中在 MySQL 复制教程中的相同步骤上，我们将简要介绍相同的主题，并深入探讨特定于组复制的细微差别。</p>
+<p class="Para" id="Par5">但是首先，让我们从组成描述组复制的语言的概念和术语的列表开始。</p>
+<h3 class="Heading">概念、术语和行话</h3>
+<p>很可能除了最精通或者掌握 MySQL 最新知识的人之外，所有人都会完全理解描述组复制的所有术语和概念。在这一节中，我们暂时后退一步，讨论一些您将在本章和接下来的两章(或任何一本关于 MySQL 高可用性的书)中遇到的术语和概念。因此，本节是与组复制相关的术语表。请随时参考这一部分。</p><ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par7"><em class="EmphasisTypeItalic ">二进制日志</em>:服务器产生的文件，包含所有执行的事务的二进制形式。二进制日志文件也用于复制，以便在两台服务器之间交换事务。当在主服务器(主服务器)上使用时，它会形成所有更改的记录，这些记录可以发送到辅助服务器(从服务器)上执行以创建副本。</p></li>
+<li><p class="Para" id="Par8"><em class="EmphasisTypeItalic ">多主节点</em>:一个组，其中的写入可以发送到多个主节点，并在组内复制。</p></li>
+<li><p class="Para" id="Par9"><em class="EmphasisTypeItalic ">故障转移</em>:允许组从主服务器上的故障中恢复并自动选择新的主服务器的事件。</p></li>
+<li><p class="Para" id="Par10"><em class="EmphasisTypeItalic ">容错</em>:从组中检测到的故障或错误中恢复而不丢失数据或功能的能力。请注意，组复制中的容错能力受到组中服务器数量的限制。有关如何计算服务器数量以及组可以容忍的故障数量，请参见联机参考手册中的“容错”一节。<sup> <a epub:type="noteref" href="#Fn1" id="Fn1_source"> 1 </a> </sup></p></li>
+<li><p class="Para" id="Par12"><em class="EmphasisTypeItalic "> Group </em>:参与同一个组复制通信设置的一组 MySQL 服务器。</p></li>
+<li><p class="Para" id="Par13"><em class="EmphasisTypeItalic ">组通信</em>:一种特殊的机制，使用状态机和通信协议来保持组中服务器的协调，包括事务执行的同步和角色的选择/选举。</p></li>
+<li><p class="Para" id="Par14"><em class="EmphasisTypeItalic ">实例</em>:正在运行的 MySQL 服务器。通常用于指在同一台机器上运行的一个或多个 MySQL 服务器。这和“MySQL 服务器”不一样，后者往往指的是硬件和 MySQL 执行的集合。</p></li>
+<li><p class="Para" id="Par15"><em class="EmphasisTypeItalic "> Primary </em>:组中的服务器，被分配收集所有数据写入(更新)的角色。</p></li>
+<li><p class="Para" id="Par16"><em class="EmphasisTypeItalic ">中继日志</em>:二进制日志文件，在辅助(从)上使用，记录从主(主)二进制日志中读取并保存以供执行的事务。它的格式与二进制日志相同。</p></li>
+<li><p class="Para" id="Par17"><em class="EmphasisTypeItalic ">辅助服务器</em>:组中被分配了 reader 角色的服务器，这意味着应用程序可以从辅助服务器读取数据，但不能写入辅助服务器。</p></li>
+<li><p class="Para" id="Par18"><em class="EmphasisTypeItalic ">单主</em>:配置有一台主服务器和一台或多台从服务器的组。这类似于旧的 MySQL 复制特性中的主/从配置。</p></li>
+<li><p class="Para" id="Par19"><em class="EmphasisTypeItalic ">切换</em>:一种受控的维护事件，管理员主动更改主服务器角色，将其从一台服务器上移除并分配给另一台服务器(使新服务器成为主服务器)。这不会自动发生，通常与故障无关。</p></li>
+<li><p class="Para" id="Par20"><em class="EmphasisTypeItalic ">事务</em>:一组数据更改，在将该组数据应用到数据之前，必须全部成功。失败的事务不会写入数据库。</p></li>
+<li><p class="Para" id="Par21"><em class="EmphasisTypeItalic ">拓扑</em>:描述复制组中服务器逻辑布局的术语。示例包括单主服务器，表示为单个服务器与每个从服务器之间的放射状连接；分层服务器，表示为单主服务器组的连接，其中每个从服务器都是另一组从服务器的主服务器；多主服务器，通常表示为每个主服务器连接到组中的每个其他主服务器以及组中的从服务器。</p></li>
+</ul>
+
+
+<p class="Para" id="Par22">您应该了解组复制的另一个方面；通过计算故障数量，一个组可以恢复并继续提供高可用性。</p>
+
+<h3 class="Heading">组复制容错</h3>
+<p>回想一下第<a href="08.html"> 8 </a>章，我们了解到当服务器离线(离开组)时，组复制可以成功容忍一定数量的服务器故障。该组可以容忍的故障数量取决于该组中的服务器数量。用于确定一组服务器<em class="EmphasisTypeItalic "> f </em>、<em class="EmphasisTypeItalic "> S </em>能够容忍多少故障同时或连续、未恢复故障的公式如下。</p>
+<pre>S = 2f + 1
+
+</pre>
+<p>例如，一组 11 台服务器最多可以容忍 5 次故障。</p>
+<pre>11 = 2f + 1
+10 = 2f
+2f = 10
+f = 10/2
+f = 5
+
+</pre>
+<p>如果你想知道有多少个服务器，<em class="EmphasisTypeItalic "> s </em>，容忍已知数量的故障，<em class="EmphasisTypeItalic "> F </em>，一个小小的数学应用揭示了以下内容。请注意，您必须向下舍入任何分数。你不能让 1.5 服务器失败。</p>
+<pre>s = 2F + 1
+(s - 1) = 2F
+2F = (s - 1)
+F = (s - 1)/2
+
+</pre>
+<p>例如，一组 5 台服务器可以容忍 2 次故障。</p>
+<pre>F = (5 - 1)/2
+F = 4/2
+F = 2
+
+</pre>
+<p>类似地，一组 7 台服务器可以容忍 3 次故障。</p>
+<pre>F = (7 - 1)/2
+F = 6/2
+F = 3
+
+</pre>
+
+
+<h2 class="Heading">设置和配置</h2>
+<p class="Para" id="Par28">现在您已经对组复制及其工作原理有了一些了解，让我们来看看如何设置它。我们将了解如何使用四台服务器设置组复制。因此，您需要在使用不同端口的系统上、在另外四个系统上或者在四个虚拟机上运行四个 MySQL 实例。对于大多数情况下的探索，在本地计算机上运行多个 MySQL 实例会很好。</p>
+<p class="Para" id="Par29">启动实例时，必须设置组复制的一些先决条件。建议您为每个实例创建一个单独的配置文件(<code>my.cfg</code>)，这样就不会冒险为两个实例使用相同的目录。为此，我们应该已经在系统上安装了 MySQL。</p>
+<p>启动一个新的 MySQL 实例很容易，只需要几个管理任务。下面概述了这些任务。</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par31"><em class="EmphasisTypeItalic ">数据目录</em>:您必须创建一个文件夹来包含数据目录。</p></li>
+<li><p class="Para" id="Par32"><em class="EmphasisTypeItalic ">端口</em>:您必须为每个实例选择一个端口。</p></li>
+<li><p class="Para" id="Par33"><em class="EmphasisTypeItalic ">配置文件</em>:您必须为每台服务器创建一个单独的配置文件。</p></li>
+<li><p class="Para" id="Par34"><em class="EmphasisTypeItalic ">手动启动实例</em>:要运行实例，您将从命令行(或通过批处理文件)启动 MySQL (mysqld ),指定正确的配置文件。</p></li>
+</ul>
+
+<p class="Para" id="Par35">我们将在下一节中看到这些步骤以及更多演示，下一节将介绍如何在本地计算机上设置和运行 MySQL 组复制的教程。</p>
+
+<h2 class="Heading">辅导的</h2>
+<p class="Para" id="Par36">本节演示如何在本地计算机上运行的一组四个 MySQL 实例之间设置组复制。如前所述，组复制对组中的角色使用不同的术语。具体来说，有一个主要角色和一个次要角色。与将一台服务器指定为主服务器的 MySQL 复制不同，组复制可以根据需要自动更改组中服务器的角色。因此，虽然我们将设置组复制，将其中一台服务器标识为主服务器，但是随着时间的推移，组的最终状态可能会导致其他服务器之一成为主服务器。</p>
+<p class="Para" id="Par37">如果您想自己体验本教程，您应该准备四台服务器。像上一个教程一样，我们将使用在当前机器上运行的几个实例。我们需要几个实例来确保该组有一个可行的集合来启用冗余和故障转移。在这种情况下，该组最多可以容忍 1 次故障；(4-1)/2 = 1.5 或 1 向下舍入。</p>
+<p class="Para" id="Par38">设置和配置组复制的步骤包括以下内容。可能还有其他同样可行的步骤来设置组复制，但是这些可以在任何机器上完成，并且不会影响 MySQL 的任何现有安装。也就是说，建议在开发机器上执行这些步骤，以消除中断生产系统的风险。</p>
+<h3 class="Heading">注意</h3>
+<p class="Para" id="Par39">用于设置组复制的步骤与 MySQL 复制非常相似。事实上，除了术语(例如，从属与辅助)、配置文件以及首次在主服务器上启动组复制之外，过程是相同的。</p>
+
+<p>
+             
+          </p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par41"><em class="EmphasisTypeItalic ">初始化数据目录</em>:创建文件夹存储数据。</p></li>
+<li><p class="Para" id="Par42"><em class="EmphasisTypeItalic ">配置主节点</em>:用新的配置文件配置主节点。</p></li>
+<li><p class="Para" id="Par43"><em class="EmphasisTypeItalic ">配置从站</em>:用新的配置文件配置从站。</p></li>
+<li><p class="Para" id="Par44"><em class="EmphasisTypeItalic ">启动 MySQL 实例</em>:启动 MySQL 服务器实例。</p></li>
+<li><p class="Para" id="Par45"><em class="EmphasisTypeItalic ">创建复制用户帐号</em>:在所有服务器上创建复制用户。</p></li>
+<li><p class="Para" id="Par46"><em class="EmphasisTypeItalic ">在主节点上启动组复制</em>:启动主节点，建立组。</p></li>
+<li><p class="Para" id="Par47"><em class="EmphasisTypeItalic ">将辅助节点连接到主节点</em>:启动复制。</p></li>
+<li><p class="Para" id="Par48"><em class="EmphasisTypeItalic ">在辅助节点上启动组复制</em>:将辅助节点添加到组成员中。</p></li>
+<li><p class="Para" id="Par49"><em class="EmphasisTypeItalic ">验证组复制状态</em>:执行一个简短的测试以确保正在复制数据。</p></li>
+</ul>
+
+          <p class="Para" id="Par50">下面几节将详细演示在安装了 MySQL 的 macOS 系统上运行的每一个步骤。对于其他平台，步骤是相同的，但路径可能略有不同。虽然本教程使用多个本地实例来演示如何使用复制，但是在生产环境中设置复制的过程是相同的。使用特定主机、驱动器、文件夹、端口等的各个命令的详细信息。是在生产中使用该程序唯一会改变的东西。</p>
+<h3 class="Heading">初始化数据目录</h3>
+<p>第一步是为使用的每台机器初始化一个数据目录。在这种情况下，我们将在本地计算机上创建一个文件夹来包含所有数据目录。我们将使用四个 MySQL 实例来代表一个主服务器和三个辅助服务器。下面演示了如何创建所需的文件夹。请注意，我们在我们使用的用户帐户可以访问的本地文件夹中创建这些文件，而不是系统或管理帐户。这是因为我们将在本地运行实例，不需要额外的权限或访问此类帐户的许可。</p>
+<pre>$ mkdir gr
+$ cd gr
+$ mkdir data
+
+</pre>
+<p class="Para" id="Par52">现在我们有了一个文件夹<code>&lt;user_home&gt;/gr/data</code>，我们可以使用 MySQL 服务器的初始化选项来设置我们的数据目录。我们使用服务器可执行文件的特殊选项<code>--initialize-insecure</code>和<code>--datadir</code>来实现这一点。<code>--initialize-insecure</code>选项告诉服务器创建数据目录并用系统数据填充它，但是跳过任何身份验证的使用。这是安全的，因为还没有创建用户(没有数据目录！).</p>
+<p class="Para" id="Par53"><code>--datadir</code>选项指定数据目录主文件夹的位置。因为我们是作为本地用户运行的，所以我们还需要<code>--user</code>选项。</p>
+<h3 class="Heading">小费</h3>
+<p class="Para" id="Par54">如果您正在复制本教程中的命令，请确保使用您自己的用户名作为<code>--user</code>选项和所有路径。</p>
+
+<p>我们还需要知道安装在本地机器上的 MySQL 服务器的基目录(名为<code>basedir</code>)。您可以从服务器配置文件中获取这些信息，或者使用 shell 并发出<code>SHOW</code> SQL 命令。下面演示了如何做到这一点。在这里，我们看到的基本目录是<code>/usr/local/mysql-8.0.16-macos10.14-x86_64</code>。我们将使用这个值，以便<code>mysqld</code>可执行文件可以找到它的依赖库和文件。</p>
+<pre>$ mysqlsh --uri root@localhost:33060 --sql -e "SHOW VARIABLES LIKE 'basedir'"
+Variable_name  Value
+basedir        /usr/local/mysql-8.0.16-macos10.14-x86_64/
+
+</pre>
+<p>下面显示了初始化主节点和辅助节点的数据目录所需的命令。</p>
+<pre>$ mysqld --user=cbell --initialize-insecure \
+  --basedir=/usr/local/mysql-8.0.16-macos10.14-x86_64/ \
+  --datadir=/Users/cbell/gr/data/primary
+$ mysqld --user=cbell --initialize-insecure \
+  --basedir=/usr/local/mysql-8.0.16-macos10.14-x86_64/ \
+  --datadir=/Users/cbell/gr/data/secondary1
+$ mysqld --user=cbell --initialize-insecure \
+  --basedir=/usr/local/mysql-8.0.16-macos10.14-x86_64/ \
+  --datadir=/Users/cbell/gr/data/secondary2
+$ mysqld --user=cbell --initialize-insecure \
+  --basedir=/usr/local/mysql-8.0.16-macos10.14-x86_64/ \
+  --datadir=/Users/cbell/gr/data/secondary3
+
+</pre>
+<p class="Para" id="Par57">现在我们已经创建并填充了数据目录，我们可以配置主服务器和从服务器了。</p>
+
+<h3 class="Heading">配置主服务器</h3>
+<p>这一步与 MySQL 复制最不同。事实上，配置文件有很大的不同。具体来说，除了必须设置的几个更常见的组复制变量之外，我们还使用启用 GTID 的复制中的相同变量。下面列出了与组复制相关的变量及其用途。控制组复制还有其他变量。有关完整列表，请参见在线参考手册中的<a href="https://dev.mysql.com/doc/refman/8.0/en/group-replication-options.html"> <code>https://dev.mysql.com/doc/refman/8.0/en/group-replication-options.html</code> </a>。</p>
+<ul class="UnorderedListMarkBullet"><li><p class="Para" id="Par59"><code>transaction_write_set_extraction</code>:定义用于散列在事务期间提取的写入的算法。组复制必须设置为<code>XXHASH64</code>。</p></li>
+<li><p class="Para" id="Par60"><code>group_replication_recovery_use_ssl</code>:决定组复制恢复连接是否使用 SSL。通常设置为<code>ON</code>。默认是<code>OFF</code>。</p></li>
+<li><p class="Para" id="Par61"><code>group_replication_group_name</code>:该服务器实例所属的组的名称。必须是有效的、唯一的 UUID。</p></li>
+<li><p class="Para" id="Par62"><code>group_replication_start_on_boot</code>:决定服务器启动时是否启动组复制。</p></li>
+<li><p class="Para" id="Par63"><code>group_replication_local_address</code>:成员为来自其他成员的连接提供的网络地址，指定为 host:port 格式的字符串。请注意，此连接用于组复制成员之间的通信，而不是供客户端使用。</p></li>
+<li><p class="Para" id="Par64"><code>group_replication_group_seeds</code>:群组成员列表，用于建立新成员到群组的连接。该列表由种子成员的<code>group_replication_local_address</code>网络地址组成，指定为逗号分隔列表，例如 host1:port1，host2:port2。</p></li>
+<li><p class="Para" id="Par65"><code>group_replication_bootstrap_group</code>:配置此服务器以引导组。此选项只能在一台服务器上设置，并且只能在第一次启动组或重新启动整个组时设置。组启动后，将该选项设置为<code>OFF</code>。</p></li>
+</ul>
+
+<p class="Para" id="Par66">注意最后一个变量，<code>group_replication_bootstrap_group</code>。这个变量是我们将在配置文件中设置为<code>OFF</code>的东西，但是只有在我们第一次引导组之后。这是初始主节点的用途之一，即启动组。我们将看到一个特殊的步骤，您必须在第一次启动主服务器时执行该步骤，以启动该组。之后，该变量必须设置为<code>OFF</code>。</p>
+<h4 class="Heading">主要配置文件</h4>
+<p class="Para" id="Par67">为了构造主服务器的配置文件，我们需要几样东西:数据目录、基目录、端口等的常用变量。以及 GTID 变量和组复制变量。添加插件目录以确保服务器可以找到组复制插件(我们将在后面的步骤中看到这一点)并打开二进制日志校验和也是一个好主意。</p>
+<p>由于<code>group_replication_group_seeds</code>变量需要最初加入组的服务器列表，我们必须决定每个服务器将使用的端口。组复制设置要求每台服务器有两个端口:一个用于正常连接，另一个用于组复制。在本教程中，我们将端口 24801+用于服务器连接，端口 24901+用于组复制端口。此外，由于我们使用本地实例，组中所有成员的主机名都将使用环回地址(127.0.0.1)，但这通常是运行它的服务器的主机名。最后，我们还需要选择服务器 id，因此我们将使用从 1 开始的顺序值。清单<a href="#PC9"> 9-1 </a>显示了我们将在本教程中用于主服务器的配置文件。</p>
+<pre>[mysqld]
+datadir="/Users/cbell/gr/data/primary"
+basedir="/usr/local/mysql-8.0.16-macos10.14-x86_64/"
+plugin_dir=/usr/local/mysql/lib/plugin/
+plugin-load=group_replication.so
+port=24801
+mysqlx-port=33061
+mysqlx-socket="/Users/cbell/rpl/primaryx.sock"
+socket="/Users/cbell/rpl/primary.sock"
+server_id=101
+master_info_repository=TABLE
+relay_log_info_repository=TABLE
+log_bin=master_binlog
+binlog_format=row
+
+# GTID VARIABLES
+gtid_mode=ON
+enforce_gtid_consistency=ON
+log_slave_updates=ON
+binlog_checksum=NONE
+
+# GR VARIABLES
+transaction_write_set_extraction=XXHASH64
+group_replication_recovery_use_ssl=ON
+group_replication_group_name="bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee"
+group_replication_start_on_boot=OFF
+group_replication_local_address="127.0.0.1:24801"
+group_replication_group_seeds="127.0.0.1:24901,127.0.0.1:24902,127.0.0.1:24903,127.0.0.1:24904"
+group_replication_bootstrap_group=OFF
+
+Listing 9-1Primary Configuration File (Group Replication)
+
+
+
+
+
+</pre>
+<p class="Para" id="Par69">您可能会注意到没有设置<code>log-bin</code>变量。当服务器遇到组复制所需的变量时，它会自动启用二进制日志。但是，如果您想要命名二进制日志文件或者将它们放在另一个文件夹中，您可以包含变量，但是这是一个高级配置选项，对于教程甚至开发安装来说都不是必需的。</p>
+<h3 class="Heading">注意</h3>
+<p class="Para" id="Par70">如果您在 Windows 上运行本教程，并且没有安装 SSL 和配置 MySQL 来使用 SSL 连接，您必须删除<code>group_replication_recovery_use_ssl</code>选项。</p>
+
+<p class="Para" id="Par71">对于本教程，您应该在我们之前创建的文件夹中创建一个名为<code>primary.cnf</code>的文件；比如<code>/Users/cbell/gr/primary.cnf</code>。在后面的步骤中，我们将使用该文件启动主实例。</p>
+<p class="Para" id="Par72">现在，让我们看看辅助节点的配置文件。</p>
+
+<h4 class="Heading">辅助配置文件</h4>
+<p class="Para" id="Par73">辅助节点的配置文件与主节点的配置文件非常相似，唯一的变化是为特定于实例的变量(如端口、数据目录、套接字和服务器 id)使用了正确的值。然而，除了这些设置之外，还有一些不同之处。<code>transaction_write_set_extraction</code>变量在初始初级上设置。</p>
+<p class="Para" id="Par74">对于辅助节点，我们添加<code>group_replication_recovery_get_public_key</code>并将其设置为<code>ON</code>。此变量确定辅助节点是否向主节点请求基于 RSA 密钥对的密码交换所需的公钥。该变量适用于通过<code>caching_sha2_password</code>认证插件进行认证的辅助节点。</p>
+<p class="Para" id="Par75">我们还包含了插件可执行文件路径的<code>plugin_dir</code>，您可以使用<code>SHOW VARIABLES LIKE '%plugin%'</code>命令。我们包含的另一个变量是值为<code>group_replication.so</code>的<code>plugin-load</code>变量。注意,<code>.so</code>文件扩展名指的是 nix 计算机上的共享对象库。在 Windows 上，你可以使用<code>.dll</code>。</p>
+<p>清单<a href="#PC10"> 9-2 </a>显示了第一个辅助节点(名为<code>secondary1.cnf</code>)的配置文件。</p>
+<pre>[mysqld]
+datadir="/Users/cbell/gr/data/secondary1"
+basedir="/usr/local/mysql-8.0.16-macos10.14-x86_64/"
+plugin_dir=/usr/local/mysql/lib/plugin/
+plugin-load=group_replication.so
+port=24901
+mysqlx-port=33062
+mysqlx-socket="/Users/cbell/rpl/secondary1x.sock"
+socket="/Users/cbell/rpl/data/secondary1.sock"
+server_id=102
+master_info_repository=TABLE
+relay_log_info_repository=TABLE
+log_bin=slave1_binlog
+binlog_format=row
+report-port=24901
+report-host=localhost
+
+# GTID VARIABLES
+gtid_mode=ON
+enforce_gtid_consistency=ON
+log_slave_updates=ON
+binlog_checksum=NONE
+
+# GR VARIABLES
+group_replication_recovery_get_public_key=ON
+group_replication_recovery_use_ssl=ON
+group_replication_group_name="bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee"
+group_replication_start_on_boot=OFF
+group_replication_local_address="127.0.0.1:24901"
+group_replication_group_seeds="127.0.0.1:24901,127.0.0.1:24902,127.0.0.1:24903,127.0.0.1:24904"
+group_replication_bootstrap_group=OFF
+
+Listing 9-2Secondary Configuration File (Group Replication)
+
+
+
+
+
+</pre>
+<p class="Para" id="Par77">在本教程中，我们将使用三个辅助节点，因此您应该在我们之前创建的文件夹中为每个节点创建一个文件，并将它们命名为<code>secondary1.cnf</code>、<code>secondary2.cnf</code>和<code>secondary3.cnf</code>。确保更改特定于实例的变量，如数据目录、套接字、端口、服务器 id 等。您必须更改两个端口；服务器端口和组复制端口。</p>
+
+
+<h3 class="Heading">启动 MySQL 实例</h3>
+<p>现在我们已经准备好启动 MySQL 实例了。这很容易做到，因为我们已经用我们需要的所有参数创建了配置文件。我们只需要提供带有<code>--defaults-file</code>选项的配置文件。下面显示了启动本教程中使用的服务器实例的命令。请注意，添加了一个重定向，将来自服务器的消息放在日志文件中。</p>
+<pre>$ mysqld --defaults-file=primary.cnf &gt; primary_output.txt 2&gt;&amp;1 &amp;
+$ mysqld --defaults-file=secondary1.cnf &gt; secondary1_output.txt 2&gt;&amp;1 &amp;
+$ mysqld --defaults-file=secondary2.cnf &gt; secondary2_output.txt 2&gt;&amp;1 &amp;
+$ mysqld --defaults-file=secondary3.cnf &gt; secondary3_output.txt 2&gt;&amp;1 &amp;
+
+</pre>
+<p>运行这些命令时，应该从包含配置文件的文件夹中运行它们。否则，您必须提供配置文件的完整路径。虽然命令中包含重定向，但您可能希望在第一次启动服务器时使用单独的终端，以确保没有错误。清单<a href="#PC12"> 9-3 </a>显示了启动主服务器时打印的消息摘录。</p>
+<pre>$ mysqld --defaults-file=primary.cnf
+MacBook-Pro-2:gr cbell$ 2019-05-05T21:00:42.388965Z 0 [System] [MY-010116] [Server] /usr/local/mysql-8.0.16-macos10.14-x86_64/bin/mysqld (mysqld 8.0.16) starting as process 935
+2019-05-05T21:00:42.392064Z 0 [Warning] [MY-010159] [Server] Setting lower_case_table_names=2 because file system for /Users/cbell/gr/data/primary/ is case insensitive
+2019-05-05T21:00:42.662123Z 0 [Warning] [MY-010068] [Server] CA certificate ca.pem is self signed.
+2019-05-05T21:00:42.676713Z 0 [System] [MY-010931] [Server] /usr/local/mysql-8.0.16-macos10.14-x86_64/bin/mysqld: ready for connections. Version: '8.0.16'  socket: '/Users/cbell/rpl/primary.sock'  port: 24801  MySQL Community Server - GPL.
+2019-05-05T21:00:42.895674Z 0 [System] [MY-011323] [Server] X Plugin ready for connections. Socket: '/Users/cbell/rpl/primaryx.sock' bind-address: '::' port: 33061
+
+Listing 9-3Starting the Primary Instance
+
+
+</pre>
+<p class="Para" id="Par80">同样，如果您计划使用单个终端，建议将输出重定向到一个文件，并使用选项在另一个进程中启动应用程序(例如，<code>&amp;</code>符号)。</p>
+<p class="Para" id="Par81">如果您正在按照本教程进行操作，并且还没有这样做，请继续操作并启动辅助服务器。使用前面显示的命令重定向到一个文件。一旦启动了所有的服务器实例，我们就可以进入下一步了。</p>
+<h3 class="Heading">安装组复制插件</h3>
+<p class="Para" id="Par82">如果您不想在配置文件中包含组复制插件，您可以使用<code>INSTALL PLUGIN</code>命令手动安装。完成后，您不必再次运行该命令——服务器将重新启动并启用插件。该命令需要插件的名称以及可动态加载的可执行文件的名称。在这种情况下，插件的名字是<code>group_replication</code>，可加载的可执行文件的名字是<code>group_replication.so</code>。因此，我们将使用的命令是<code>INSTALL PLUGIN group_replication SONAME 'group_replication.so'</code>。</p>
+<p class="Para" id="Par83">注意文件名中的<code>.so</code>。这是您将用于*nix 平台的扩展。在 Windows 上，文件扩展名是<code>.dll</code>。你可以用<code>SHOW PLUGINS</code>命令检查插件的状态。</p>
+<p class="Para" id="Par84">您必须在所有实例上运行该命令。一旦插件加载到所有实例上，我们就可以继续在所有实例上创建复制用户。</p>
+
+
+<h3 class="Heading">创建复制用户帐户</h3>
+<p>MySQL 实例启动后，您必须创建一个用户，供服务器相互连接使用。回想一下，在组复制中，服务器都相互“对话”。幸运的是，这些命令与我们在 MySQL 复制中使用的命令相同。我们需要在所有服务器实例上创建这个用户。下面显示了创建复制用户所需的命令。在所有服务器上执行这些命令。</p>
+<pre>SET SQL_LOG_BIN=0;
+CREATE USER rpl_user@'%' IDENTIFIED BY 'rpl_pass';
+GRANT REPLICATION SLAVE ON ∗.∗ TO rpl_user@'%';
+FLUSH PRIVILEGES;
+SET SQL_LOG_BIN=1;
+
+</pre>
+<p class="Para" id="Par86">注意主机名中使用了<code>%</code>。这样做是为了确保复制用户可以从任何服务器连接。对于生产环境，您通常不会这样做，但是对于教程或开发测试，这使事情变得简单了一些。</p>
+<p class="Para" id="Par87">回想一下，这些命令告诉服务器暂时禁止记录对二进制日志的更改。每当我们不想在拓扑中的其他机器上复制命令时，我们就这样做。具体来说，不应该复制像创建用户这样的维护和管理命令。关闭二进制日志是确保您不会意外发出无法在其他机器上执行的事务的好方法。</p>
+<p>执行这些命令的最佳方式是将它们保存到名为<code>create_rpl_user.sql</code>的文件中，并使用 mysql 客户端的源命令从文件中读取命令并执行它们。因此，您可以使用以下命令在所有实例上快速创建复制用户。</p>
+<pre>$ mysqlsh --uri root@localhost:24801 --sql -f "create_rpl_user.sql"
+$ mysqlsh --uri root@localhost:24802 --sql -f "create_rpl_user.sql"
+$ mysqlsh --uri root@localhost:24803 --sql -f "create_rpl_user.sql"
+$ mysqlsh --uri root@localhost:24804 --sql -f "create_rpl_user.sql"
+
+</pre>
+<p class="Para" id="Par89">现在，我们准备在主节点上启动组复制。</p>
+
+<h3 class="Heading">在主节点上启动组复制</h3>
+<p class="Para" id="Par90">下一步是首次在主节点上启动组复制。回想一下我们对组复制变量的讨论，变量<code>group_replication_bootstrap_group</code>通常被设置为<code>OFF</code>，除非在组的第一次启动时。由于该组从未启动过，因此我们必须在主服务器上启动。</p>
+<p>幸运的是，变量<code>group_replication_bootstrap_group</code>是动态的，我们可以动态地打开和关闭它。因此，我们可以在主节点上运行以下命令来首次启动组复制。</p>
+<pre>$ mysqlsh --uri root@localhost:24801 --sql
+...
+SET GLOBAL group_replication_bootstrap_group=ON;
+START GROUP_REPLICATION;
+SET GLOBAL group_replication_bootstrap_group=OFF;
+
+</pre>
+<p class="Para" id="Par92">如果您还记得，我们在主配置文件中将<code>group_replication_bootstrap_group</code>设置为<code>OFF</code>。这样，如果我们重新启动主服务器，设置将是正确的。如果您愿意，您可以设置它<code>ON</code>，但是您必须在重新启动主服务器之前在配置文件中更改它。设置为<code>OFF</code>安全多了，工作量也少了。</p>
+<p class="Para" id="Par93">如果您正在学习本教程，那么现在就在主服务器上运行这些命令。完成后，您就可以将辅助节点连接到主节点了。</p>
+
+<h3 class="Heading">将辅助节点连接到主节点</h3>
+<p>下一步是将辅助节点连接到主节点。我们使用与上一教程中相同的<code>CHANGE MASTER</code>命令，但是，我们只需要复制用户和密码。我们告诉服务器连接到名为<code>group_replication_recovery</code>的特殊复制通道。下面显示了用于将每个辅助节点连接到主节点的命令。</p>
+<pre>CHANGE MASTER TO MASTER_USER="rpl_user", MASTER_PASSWORD="rpl_pass" FOR CHANNEL 'group_replication_recovery';
+
+</pre>
+<p>注意，我们需要的信息甚至比启用了 GTID 的复制还要少。酷！您必须在所有辅助节点上运行该命令。将它保存到一个文件并使用 mysql 客户端执行它可能更容易，就像我们为复制用户所做的那样。例如，将它保存到一个名为<code>change_master.sql</code>的文件中，并按如下方式执行。</p>
+<pre>$ mysqlsh --uri root@localhost:24802 --sql -f "change_master.sql"
+$ mysqlsh --uri root@localhost:24803 --sql -f "change_master.sql"
+$ mysqlsh --uri root@localhost:24804 --sql -f "change_master.sql"
+
+</pre>
+<p class="Para" id="Par96">现在，我们已经将辅助节点配置为连接主节点，我们必须通过启动组复制来完成该过程。</p>
+
+<h3 class="Heading">在辅助节点上启动组复制</h3>
+<p>下一步是在辅助节点上启动组复制。组复制不像 MySQL 复制那样使用<code>START SLAVE</code>命令，而是使用<code>START GROUP_REPLICATION</code>命令。如下所示，在每个辅助节点上运行此命令。</p>
+<pre>$ mysqlsh --uri root@localhost:24802 --sql -e "START GROUP_REPLICATION"
+$ mysqlsh --uri root@localhost:24803 --sql -e "START GROUP_REPLICATION"
+$ mysqlsh --uri root@localhost:24804 --sql -e "START GROUP_REPLICATION"
+
+</pre>
+<p class="Para" id="Par98"><code>START GROUP_REPLICATION</code>命令通常不会报告任何错误，可能需要更长时间才能返回。这是因为当辅助节点连接到主节点并开始与主节点协商时，有许多事情在后台进行。然而，与 MySQL 复制不同，您不能使用<code>SHOW SLAVE STATUS</code>来检查状态。事实上，发出那个命令不会得到任何结果。那你是做什么的？</p>
+
+<h3 class="Heading">验证组复制状态</h3>
+<p class="Para" id="Par99">组复制重新设计了我们监视复制服务的方式。组复制向<code>performance_schema</code>数据库添加了几个视图，您可以使用这些视图来监控组复制。那里有很多信息，如果你感兴趣，你可以查看<a href="https://dev.mysql.com/doc/refman/8.0/en/group-replication-monitoring.html"> <code>https://dev.mysql.com/doc/refman/8.0/en/group-replication-monitoring.html</code> </a>来了解更多关于视图和它们包含的内容。</p>
+<p>检查组复制状态需要针对<code>performance_schema</code>视图发出查询。<code>replication_group_members</code>视图(表)用于监视不同服务器实例的状态，这些实例在当前视图中被跟踪，或者换句话说，它们是组的一部分，因此由成员资格服务跟踪。该信息在作为复制组成员的所有服务器实例之间共享，因此可以从任何成员处查询所有组成员的信息。清单<a href="#PC19"> 9-4 </a>展示了运行中的命令。您可以将命令保存在一个名为<code>check_gr.sql</code>的文件中，以备后用。</p>
+<pre>$ mysqlsh --uri root@localhost:24802 --sql
+MySQL Shell 8.0.16
+
+Copyright (c) 2016, 2019, Oracle and/or its affiliates. All rights reserved.
+Oracle is a registered trademark of Oracle Corporation and/or its affiliates.
+Other names may be trademarks of their respective owners.
+
+Type '\help' or '\?' for help; '\quit' to exit.
+Creating a session to 'root@localhost:24802'
+Fetching schema names for autocompletion... Press ^C to stop.
+Your MySQL connection id is 28
+Server version: 8.0.16 MySQL Community Server - GPL
+No default schema selected; type \use &lt;schema&gt; to set one.
+
+
+&gt; SHOW SLAVE STATUS\G
+
+Empty set (0.0003 sec)
+
+
+&gt; SELECT ∗ FROM performance_schema.replication_group_members \G
+
+∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗ 1. row ∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗
+  CHANNEL_NAME: group_replication_applier
+     MEMBER_ID: e0b8aeca-6f7e-11e9-bd22-533c3552fe03
+   MEMBER_HOST: MacBook-Pro-2.local
+   MEMBER_PORT: 24801
+  MEMBER_STATE: ONLINE
+   MEMBER_ROLE: PRIMARY
+MEMBER_VERSION: 8.0.16
+∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗ 2. row ∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗
+  CHANNEL_NAME: group_replication_applier
+     MEMBER_ID: e32085ac-6f7e-11e9-a081-cc47fe26c35d
+   MEMBER_HOST: localhost
+   MEMBER_PORT: 24901
+  MEMBER_STATE: ONLINE
+   MEMBER_ROLE: SECONDARY
+MEMBER_VERSION: 8.0.16
+∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗ 3. row ∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗
+  CHANNEL_NAME: group_replication_applier
+     MEMBER_ID: e5818c4c-6f7e-11e9-a41a-c85d7844eaca
+   MEMBER_HOST: localhost
+   MEMBER_PORT: 24902
+  MEMBER_STATE: ONLINE
+   MEMBER_ROLE: SECONDARY
+MEMBER_VERSION: 8.0.16
+∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗ 4. row ∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗
+  CHANNEL_NAME: group_replication_applier
+     MEMBER_ID: e7f23058-6f7e-11e9-a7c3-c576fe9a0754
+   MEMBER_HOST: localhost
+   MEMBER_PORT: 24903
+  MEMBER_STATE: RECOVERING
+   MEMBER_ROLE: SECONDARY
+MEMBER_VERSION: 8.0.16
+4 rows in set (0.0013 sec)
+
+Listing 9-4Checking Group Replication Status
+
+
+</pre>
+<p class="Para" id="Par101">注意，我们运行了<code>SHOW SLAVE STATUS</code>命令，但没有得到任何回报。Drat。然而，当我们查询视图时，我们得到一个简短的信息列表，包括组中每个成员的当前状态。有趣的是，您可以对组中的任何成员运行这个查询。这显示了组复制如何将元数据传播到组中的所有成员。</p>
+<p>您还可以缩小输出范围，以获得更令人满意的视图，其中仅包括此处显示的成员主机、端口、状态和角色。</p>
+<pre>&gt; SELECT MEMBER_HOST, MEMBER_PORT, MEMBER_STATE, MEMBER_ROLE FROM performance_schema.replication_group_members;
++---------------------+-------------+--------------+-------------+
+| MEMBER_HOST         | MEMBER_PORT | MEMBER_STATE | MEMBER_ROLE |
++---------------------+-------------+--------------+-------------+
+| MacBook-Pro-2.local |       24801 | ONLINE       | PRIMARY     |
+| localhost           |       24901 | ONLINE       | SECONDARY   |
+| localhost           |       24902 | ONLINE       | SECONDARY   |
+| localhost           |       24903 | ONLINE       | SECONDARY   |
++---------------------+-------------+--------------+-------------+
+4 rows in set (0.0006 sec)
+
+</pre>
+<p>如果您只想定位主服务器，可以对任何组成员使用以下查询。当您对组中的任何一个成员执行此查询时，您将看到主服务器的 UUID 如下所示。</p>
+<pre>&gt; SELECT member_id, member_host, member_port FROM performance_schema.global_status JOIN performance_schema.replication_group_members ON VARIABLE_VALUE=member_id WHERE VARIABLE_NAME="group_replication_primary_member";
++--------------------------------------+---------------------+-------------+
+| member_id                            | member_host         | member_port |
++--------------------------------------+---------------------+-------------+
+| e0b8aeca-6f7e-11e9-bd22-533c3552fe03 | MacBook-Pro-2.local |       24801 |
++--------------------------------------+---------------------+-------------+
+1 row in set (0.0014 sec)
+
+</pre>
+<p>现在我们已经运行了组复制，让我们创建一些数据。我们将使用与上一教程中相同的样本数据。但是，这一次，我们将在其中一个辅助节点上执行查询。你预计会发生什么？如果您从 MySQL 复制的角度考虑，您可能希望数据只出现在其中一个辅助服务器上。让我们看看会发生什么。下面显示了在其中一个辅助节点上执行数据查询。</p>
+<pre>&gt; CREATE DATABASE test;
+ERROR: 1290 (HY000): The MySQL server is running with the --super-read-only option so it cannot execute this statement
+
+</pre>
+<p class="Para" id="Par105">为什么会出现这个错误？事实证明，每个辅助节点都是以超级只读启动的，这意味着任何人都不能提交写操作，即使是那些拥有“超级”权限的人。因此(从 MySQL 复制)向从服务器发送写操作的常见问题得到了解决。万岁。使用超级只读还表明我们正在单主模式下运行组复制(这是默认模式)。当我们在后面的章节中探索 InnoDB 集群的细微差别时，我们将看到其他模式。</p>
+<p>回到我们创建一些数据的测试，让我们在主服务器上运行相同的命令。下面显示了预期的结果。</p>
+<pre>$ mysqlsh --uri root@localhost:24801 --sql
+...
+
+&gt; CREATE DATABASE test;
+
+Query OK, 1 row affected (0.0042 sec)
+
+
+&gt; USE test;
+
+Query OK, 0 rows affected (0.0003 sec)
+
+
+&gt; CREATE TABLE test.t1 (id INT PRIMARY KEY, message TEXT NOT NULL);
+
+Query OK, 0 rows affected (0.0093 sec)
+
+
+&gt; INSERT INTO test.t1 VALUES (1, 'Chuck');
+
+Query OK, 1 row affected (0.0103 sec)
+
+</pre>
+<p>在这里，我们看到数据是创建的。现在，检查第二个。下面显示了在辅助节点上运行查询的结果。如您所见，数据已经被复制。</p>
+<pre>$ mysqlsh --uri root@localhost:24803 --sql
+...
+
+&gt; SELECT ∗ FROM test.t1;
+
++----+---------+
+| id | message |
++----+---------+
+|  1 | Chuck   |
++----+---------+
+1 row in set (0.0006 sec)
+
+</pre>
+<p class="Para" id="Par108">关于设置 MySQL 组复制的简短教程到此结束。本节用最简洁的术语简要介绍了 MySQL 组复制。现在，让我们看看如何编写 MySQL 组复制的示例设置。然而，还有一步。</p>
+
+<h3 class="Heading">正在关闭组复制</h3>
+<p>如果您在自己的机器上尝试本教程，请记住按照精确的顺序关闭实例。在每个辅助节点上，您首先需要使用以下命令停止组复制。</p>
+<pre>$ mysqlsh --uri root@localhost:24802 --sql -e "STOP GROUP_REPLICATION"
+
+</pre>
+<p>一旦停止了所有从服务器，您可以使用以下命令先关闭从服务器，然后关闭主服务器。注意，我们对主设备和从设备使用了旧的协议端口(13001、13002)。这是因为 X 协议不支持 shutdown 命令。如果在使用 MySQL X 端口时遇到错误，请尝试旧的协议并重新运行该命令。</p>
+<pre>$ mysqlsh --uri root@localhost:24804 --sql -e "SHUTDOWN"
+$ mysqlsh --uri root@localhost:24803 --sql -e "SHUTDOWN"
+$ mysqlsh --uri root@localhost:24802 --sql -e "SHUTDOWN"
+$ mysqlsh --uri root@localhost:24801 --sql -e "SHUTDOWN"
+
+</pre>
+
+
+<h2 class="Heading">故障转移演示</h2>
+<p class="Para" id="Par111">现在我们有了一个工作组复制设置，让我们看看自动故障转移是如何工作的。如果您还没有运行前面的教程，并且想继续学习，请确保先运行前面的步骤。</p>
+<p class="Para" id="Par112">自动故障切换是组复制的内置功能。通信机制确保主节点(在单主节点配置中)的活动受到监控，当它不再可用或出现严重问题时，该组可以决定终止主节点连接并选举新的主节点。</p>
+<p>让我们看看这是如何工作的。回想一下前面的教程，我们在端口 24801 上运行初始主服务器。我们可以通过终止该服务器的 MySQL 进程来模拟失败。因为我们运行在 Linux 上，所以我们可以通过检查进程 id 文件来确定进程 id，这个文件是 MySQL 用机器名和数据目录中的文件扩展名<code>.pid</code>创建的。例如，教程中显示的主文件在<code>data/primary/oracle-pc.pid</code>中。下面演示了如何找到进程 id 并停止它。请注意，您可能需要超级用户权限来终止该进程。</p>
+<pre>$ more ./data/primary/oracle-pc.pid
+18019
+$ sudo kill -9 18019
+
+</pre>
+<h3 class="Heading">小费</h3>
+<p class="Para" id="Par114">在 Windows 上，您可以使用任务管理器终止该进程。</p>
+
+<p>既然主服务器已经关闭，我们可以使用前面的查询来查看组的运行状况。回想一下，我们使用包含查询的<code>check_gr.sql</code>文件(参见清单<a href="#PC19"> 9-4 </a>)。清单<a href="#PC28"> 9-5 </a>显示了查询的输出。</p>
+<pre>$ mysqlsh --uri root@localhost:24802 --sql -e "source check_gr.sql"
+∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗ 1. row ∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗
+  CHANNEL_NAME: group_replication_applier
+     MEMBER_ID: 2854aecd-4330-11e8-abb6-d4258b76e981
+   MEMBER_HOST: oracle-pc
+   MEMBER_PORT: 24802
+  MEMBER_STATE: ONLINE
+   MEMBER_ROLE: PRIMARY
+MEMBER_VERSION: 8.0.16
+∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗ 2. row ∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗
+  CHANNEL_NAME: group_replication_applier
+     MEMBER_ID: 2ecd9f66-4330-11e8-90fe-d4258b76e981
+   MEMBER_HOST: oracle-pc
+   MEMBER_PORT: 24803
+  MEMBER_STATE: ONLINE
+   MEMBER_ROLE: SECONDARY
+MEMBER_VERSION: 8.0.16
+∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗ 3. row ∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗
+  CHANNEL_NAME: group_replication_applier
+     MEMBER_ID: 3525b7be-4330-11e8-80b1-d4258b76e981
+   MEMBER_HOST: oracle-pc
+   MEMBER_PORT: 24804
+  MEMBER_STATE: ONLINE
+   MEMBER_ROLE: SECONDARY
+MEMBER_VERSION: 8.0.16
++--------------------------------------+-------------+-------------+
+| member_id                            | member_host | member_port |
++--------------------------------------+-------------+-------------+
+| 2854aecd-4330-11e8-abb6-d4258b76e981 | oracle-pc   |       24802 |
++--------------------------------------+-------------+-------------+
+
+Listing 9-5Checking Group Health After Primary Goes Down
+
+
+</pre>
+<p>请注意，我们看到该组已经自动选择了一个新的主服务器(在端口 24802 上)，现在该组中只有三台服务器。因此没有写能力的损失。但是，回想一下前面的讨论，该组只能容忍这么多故障，一旦达到该限制，该组将无法成功进行故障切换，在这种情况下，该组可能无法容错。清单<a href="#PC29"> 9-6 </a>显示了第二台和第三台主机停止后同一组的状态。请注意，最后一个主节点的状态未知。</p>
+<pre>$ mysqlsh --uri root@localhost:24804 --sql -e "source check_gr.sql"
+∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗ 1. row ∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗
+  CHANNEL_NAME: group_replication_applier
+     MEMBER_ID: 2ecd9f66-4330-11e8-90fe-d4258b76e981
+   MEMBER_HOST: oracle-pc
+   MEMBER_PORT: 24803
+  MEMBER_STATE: UNREACHABLE
+   MEMBER_ROLE: PRIMARY
+MEMBER_VERSION: 8.0.16
+∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗ 2. row ∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗∗
+  CHANNEL_NAME: group_replication_applier
+     MEMBER_ID: 3525b7be-4330-11e8-80b1-d4258b76e981
+   MEMBER_HOST: oracle-pc
+   MEMBER_PORT: 24804
+  MEMBER_STATE: ONLINE
+   MEMBER_ROLE: SECONDARY
+MEMBER_VERSION: 8.0.16
++--------------------------------------+-------------+-------------+
+| member_id                            | member_host | member_port |
++--------------------------------------+-------------+-------------+
+| 2ecd9f66-4330-11e8-90fe-d4258b76e981 | oracle-pc   |       24803 |
++--------------------------------------+-------------+-------------+
+
+Listing 9-6State of the Group When No More Primary Servers Remain
+
+
+</pre>
+<p class="Para" id="Par117">在这里，我们可以看到其中一个辅助节点确实接管了主节点的角色，并且该组容忍了故障。但是，请注意，由于我们从四台服务器开始，我们只能容忍一台服务器出现故障。但是，我们可以随时添加新的辅助节点，以提高组可以容忍的故障数量。例如，我们可以修复出现故障的辅助节点，并将其添加回组中。</p>
+
+<h2 class="Heading">摘要</h2>
+<p class="Para" id="Par118">不可否认，组复制是 MySQL 高可用性的一次飞跃。然而，正如我们在本章的教程中所看到的，设置起来并不简单。虽然那些熟悉 MySQL 复制的人会看到类似的过程，但有一些额外的步骤和略有不同的命令，配置文件中的变化最多，但那些不熟悉 MySQL 和高可用性的人可能会觉得学习曲线相当陡峭。</p>
+<p class="Para" id="Par119">在本章中，我们对组复制进行了初步了解，并体验了最初以及在一两次故障期间设置和维护组的过程。如果你是那些认为一定有更好的方法的人之一，那就有，我们就快到了！</p>
+<p class="Para" id="Par120">在下一章中，我们将了解 MySQL 中最新、最好的高可用性特性——InnoDB Cluster，并使用 MySQL Shell 来管理它。</p>
+
+<aside class="FootnoteSection" epub:type="footnotes">Footnotes
+<a href="#Fn1_source">1</a><p class="Para" id="Par11"><a href="https://dev.mysql.com/doc/refman/8.0/en/group-replication-fault-tolerance.html">T2<code>https://dev.mysql.com/doc/refman/8.0/en/group-replication-fault-tolerance.html</code></a></p>
+
+ 
+
+</aside>
+
+</body>
+</html>
