@@ -1,3 +1,4 @@
++   [Python MySQL Shell 入门指南](README.md)
 +   [一、MySQL Shell 简介](01.md)
 +   [二、安装 MySQL Shell](02.md)
 +   [三、MySQL Shell 教程](03.md)
@@ -10,4 +11,3 @@
 +   [十、将 Shell 与 InnoDB 集群一起使用](10.md)
 +   [十一、示例：InnoDB 集群设置和管理](11.md)
 +   [十二、附录](12.md)
-+   [Python MySQL Shell 入门指南](README.md)

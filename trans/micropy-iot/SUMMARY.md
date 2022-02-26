@@ -1,3 +1,4 @@
++   [MicroPython 物联网教程](README.md)
 +   [一、什么是物联网？](01.md)
 +   [二、MicroPython 简介](02.md)
 +   [三、MicroPython 硬件](03.md)
@@ -10,4 +11,3 @@
 +   [十、项目 3：工厂监控](10.md)
 +   [十一、项目 4：使用天气传感器](11.md)
 +   [十二、何去何从](12.md)
-+   [MicroPython 物联网教程](README.md)
